@@ -36,6 +36,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m4.py"]),
     ("live: CREATE2 deposit-proxy detection smoke M16",
      [sys.executable, "scripts/smoke_m16.py"]),
+    ("live: CoinJoin guard + co-input clustering smoke M17",
+     [sys.executable, "scripts/smoke_m17.py"]),
 ]
 
 

@@ -15,11 +15,14 @@ flagged addresses, never whole chains.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import networkx as nx
 
 from ..adapters.base import CanonicalTx, ChainAdapter
+
+if TYPE_CHECKING:  # M17: clustering result type for annotate_clusters
+    from ..clustering import ClusteringResult
 
 _COINBASE = "coinbase"  # pseudo-input label used by the Bitcoin adapter
 
@@ -127,6 +130,26 @@ class TxGraph:
             "transfers": self.g.number_of_edges(),
             "transactions": len(self.txs),
         }
+
+    def annotate_clusters(self, result: ClusteringResult) -> int:
+        """Attach M17 common-input cluster ids to graph nodes.
+
+        Nodes whose address belongs to a cluster get a ``cluster_id``
+        attribute (the cluster's deterministic id); unclustered nodes are
+        left untouched. Returns the number of nodes annotated.
+        """
+        annotated = 0
+        for address, cid in result.clusters.items():
+            if address in self.g:
+                self.g.nodes[address]["cluster_id"] = cid
+                annotated += 1
+        return annotated
+
+    def cluster_id(self, address: str) -> Optional[str]:
+        """Cluster id previously attached by annotate_clusters, if any."""
+        if address not in self.g:
+            return None
+        return self.g.nodes[address].get("cluster_id")
 
 
 async def expand_address(
