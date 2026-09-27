@@ -25,28 +25,51 @@ SKIP = "SKIP: integration services unavailable (set M7_INTEGRATION=1 with " \
        "docker compose up postgres redis)"
 
 
-async def _services_up(dsn: str, redis_url: str) -> bool:
-    try:
-        from sqlalchemy.ext.asyncio import create_async_engine
-        engine = create_async_engine(dsn)
-        async with engine.connect():
-            pass
-        await engine.dispose()
-    except Exception as exc:
-        print(f"{SKIP} [postgres: {exc}]")
-        return False
-    try:
-        import redis.asyncio as redis
-        client = redis.from_url(redis_url, socket_timeout=3)
-        await client.ping()
-        await client.aclose()
-    except Exception as exc:
-        print(f"{SKIP} [redis: {exc}]")
-        return False
-    return True
+def load_env() -> None:
+    """Seed os.environ from .env (setdefault: a real exported var wins).
+
+    The M7_INTEGRATION gate below reads os.environ, while pydantic Settings
+    only reads .env into the settings object — without this, flags set in
+    .env are invisible to the gate.
+    """
+    env_file = Path(".env")
+    if not env_file.exists():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
+async def _services_up(dsn: str, redis_url: str,
+                       attempts: int = 6, delay_s: float = 5.0) -> bool:
+    """Probe postgres + redis, retrying while docker services boot."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            from sqlalchemy.ext.asyncio import create_async_engine
+            engine = create_async_engine(dsn)
+            async with engine.connect():
+                pass
+            await engine.dispose()
+            import redis.asyncio as redis
+            client = redis.from_url(redis_url, socket_timeout=3)
+            await client.ping()
+            await client.aclose()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            if attempt < attempts - 1:
+                print(f"[m7] services not ready (attempt {attempt + 1}/"
+                      f"{attempts}), waiting {delay_s:g}s ...")
+                await asyncio.sleep(delay_s)
+    print(f"{SKIP} [{last}]")
+    return False
 
 
 async def main() -> int:
+    load_env()
     if os.environ.get("M7_INTEGRATION") != "1":
         print(SKIP)
         return 0

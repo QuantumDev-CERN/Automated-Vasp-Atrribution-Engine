@@ -25,7 +25,25 @@ SKIP = ("SKIP: neo4j unavailable "
         "(set M8_INTEGRATION=1 with docker compose up neo4j)")
 
 
+def load_env() -> None:
+    """Seed os.environ from .env (setdefault: a real exported var wins).
+
+    The M8_INTEGRATION gate below reads os.environ, while pydantic Settings
+    only reads .env into the settings object — without this, flags set in
+    .env are invisible to the gate.
+    """
+    env_file = Path(".env")
+    if not env_file.exists():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
 async def main() -> int:
+    load_env()
     if os.environ.get("M8_INTEGRATION") != "1":
         print(SKIP + " [M8_INTEGRATION!=1]")
         return 0
