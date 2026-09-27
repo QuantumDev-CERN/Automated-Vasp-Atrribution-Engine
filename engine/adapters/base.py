@@ -45,6 +45,11 @@ class FlowParty(BaseModel):
 
     address: str
     value: str = "0"
+    # UTXO script type when the adapter knows it (Bitcoin: p2pkh, p2sh,
+    # p2wpkh, p2wsh, p2tr; normalized by the adapter). None = unknown or
+    # not applicable (account-based chains). Used by the peel classifier's
+    # script-type match factor (master plan section 2).
+    script_type: Optional[str] = None
 
 
 class DexSwap(BaseModel):

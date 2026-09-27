@@ -21,6 +21,23 @@ _MEMPOOL = "https://mempool.space/api"
 _PAGE_SIZE = 25  # mempool.space fixed page size for /address/{addr}/txs
 _BTC = Asset(kind=AssetKind.NATIVE, chain=Chain.BITCOIN, symbol="BTC", decimals=8)
 
+# mempool.space scriptpubkey_type values -> canonical script types.
+# Anything else (op_return, nonstandard, unknown) maps to None.
+_SCRIPT_TYPES = {
+    "p2pkh": "p2pkh",
+    "p2sh": "p2sh",
+    "v0_p2wpkh": "p2wpkh",
+    "v0_p2wsh": "p2wsh",
+    "v1_p2tr": "p2tr",
+}
+
+
+def _script_type(raw_type: Optional[str]) -> Optional[str]:
+    """Normalize a mempool.space scriptpubkey_type to a canonical type."""
+    if not raw_type:
+        return None
+    return _SCRIPT_TYPES.get(raw_type.strip().lower())
+
 
 class BitcoinAdapter(ChainAdapter):
     """UTXO normalization: every input/output becomes a FlowParty.
@@ -68,7 +85,11 @@ class BitcoinAdapter(ChainAdapter):
                 continue
             value = int(vout.get("value") or 0)
             total_out += value
-            outputs.append(FlowParty(address=addr, value=str(value)))
+            outputs.append(FlowParty(
+                address=addr,
+                value=str(value),
+                script_type=_script_type(vout.get("scriptpubkey_type")),
+            ))
 
         inputs: list[FlowParty] = []
         for vin in raw.get("vin", []):
@@ -80,7 +101,8 @@ class BitcoinAdapter(ChainAdapter):
             if not addr:
                 continue
             inputs.append(
-                FlowParty(address=addr, value=str(int(prev.get("value") or 0)))
+                FlowParty(address=addr, value=str(int(prev.get("value") or 0)),
+                          script_type=_script_type(prev.get("scriptpubkey_type")))
             )
 
         if not inputs and not outputs:

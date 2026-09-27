@@ -15,8 +15,10 @@ doubt we emit DIRECT_TRANSFER.
 
 Peel (UTXO chains): 1 input, 2 outputs, one output much larger than the
 other (value asymmetry) AND the large output is fresh (never seen elsewhere
-in the observed graph). The large-output edge is the change branch; the
-small-output edge is the peeled payment.
+in the observed graph) AND — when the adapter knows both script types —
+the large output's script type matches the input's (a wallet generates
+change with the same script type as its inputs). A known mismatch vetoes
+the peel call: when in doubt we emit DIRECT_TRANSFER.
 
 Sweep (any chain): many distinct inputs (>= SWEEP_MIN_INPUTS), 1-2 outputs.
 The largest output is the consolidation wallet — typically a VASP hot
@@ -232,24 +234,52 @@ def _classify_peel(
     ratio = large_v / small_v if small_v else float("inf")
     share = large_v / total
     fresh = graph.g.in_degree(large.address) <= 1  # only this tx, in this graph
+    shaped = (ratio >= PEEL_MIN_ASYMMETRY
+              and share >= PEEL_MIN_CHANGE_SHARE
+              and fresh)
+
+    # Script-type match (master plan section 2): a wallet mints change with
+    # the same script type as the spent input. Unknown on either side is
+    # neutral (adapters may not provide it); a known mismatch vetoes peel.
+    in_type = inputs[0].script_type
+    out_type = large.script_type
+    script_match = bool(in_type and out_type and in_type == out_type)
+    if shaped and in_type and out_type and not script_match:
+        return HopClassification(
+            HopKind.DIRECT_TRANSFER,
+            0.6,
+            f"not peel-shaped: script-type mismatch "
+            f"(input {in_type} vs change {out_type})",
+            {
+                "tx_hash": tx.tx_hash,
+                "script_match": False,
+                "input_script_type": in_type,
+                "output_script_type": out_type,
+            },
+        )
 
     if dst == large.address:
-        if ratio >= PEEL_MIN_ASYMMETRY and share >= PEEL_MIN_CHANGE_SHARE and fresh:
-            conf = min(0.95, 0.55 + 0.4 * share)
+        if shaped:
+            conf = min(0.95, 0.55 + 0.4 * share + (0.05 if script_match else 0.0))
+            reason = (f"peel change: 1-in/2-out, {ratio:.1f}x asymmetry, "
+                      f"{share:.0%} to fresh address {dst[:12]}")
+            if script_match:
+                reason += f", script-type match ({in_type})"
             return HopClassification(
                 HopKind.PEEL,
                 conf,
-                f"peel change: 1-in/2-out, {ratio:.1f}x asymmetry, "
-                f"{share:.0%} to fresh address {dst[:12]}",
+                reason,
                 {
                     "tx_hash": tx.tx_hash,
                     "asymmetry_ratio": round(ratio, 2),
                     "change_share": round(share, 3),
+                    "script_match": script_match,
+                    "script_type": in_type if script_match else None,
                 },
             )
         return None  # large output but not peel-shaped -> falls to direct
     # small output of a 1-in/2-out UTXO tx: the peeled payment
-    if ratio >= PEEL_MIN_ASYMMETRY and share >= PEEL_MIN_CHANGE_SHARE and fresh:
+    if shaped:
         return HopClassification(
             HopKind.DIRECT_TRANSFER,
             0.65,
