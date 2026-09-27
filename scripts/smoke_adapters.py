@@ -224,16 +224,26 @@ async def section_solana() -> None:
 
 # ------------------------------------------------------------------ runner
 
+def _need_key(var: str) -> str:
+    """Read an indexer key that must come from the environment/.env.
+
+    Raises SectionSkip (not KeyError) when the variable is absent, so a
+    missing key skips its section instead of crashing the whole smoke.
+    """
+    key = os.environ.get(var)
+    if not key:
+        raise SectionSkip(f"{var} not set — add it to .env to run this section")
+    return key
+
+
 async def main() -> None:
     load_env()
-    eth_key = os.environ["ETHERSCAN_API_KEY"]
-    tron_key = os.environ["TRONGRID_API_KEY"]
-    cov_key = os.environ["COVALENT_API_KEY"]
 
     sections = [
-        ("eth", lambda: section_eth(eth_key)),
-        ("covalent-bsc-polygon", lambda: section_covalent(cov_key)),
-        ("tron", lambda: section_tron(tron_key)),
+        ("eth", lambda: section_eth(_need_key("ETHERSCAN_API_KEY"))),
+        ("covalent-bsc-polygon",
+         lambda: section_covalent(_need_key("COVALENT_API_KEY"))),
+        ("tron", lambda: section_tron(_need_key("TRONGRID_API_KEY"))),
         ("bitcoin", section_bitcoin),
         ("solana", section_solana),
     ]
@@ -247,7 +257,8 @@ async def main() -> None:
           f"{len(passed)} passed, {len(skipped)} skipped"
           + (f" ({', '.join(skipped)})" if skipped else ""))
     if len(skipped) == len(sections):
-        sys.exit("SMOKE FAILED — every section skipped; check network connectivity")
+        sys.exit("SMOKE FAILED — every section skipped; "
+                 "check network connectivity and indexer API keys in .env")
 
 
 if __name__ == "__main__":

@@ -13,13 +13,14 @@ Run: uvicorn integrations.sahyog_mock.mock_server:app --port 8091
 """
 import hashlib
 import hmac
-import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from api.core.config import settings
 
 app = FastAPI(title="SAHYOG (mock)")
 
@@ -33,8 +34,9 @@ def _bad_signature(request: Request, body: bytes) -> bool:
     sig = request.headers.get("X-Engine-Signature")
     if not sig:
         return False  # lenient mode: unsigned accepted
-    secret = os.environ.get("ENGINE_WEBHOOK_SECRET",
-                            "dev-webhook-secret-change-me")
+    # Same Settings the engine signs with: ENGINE_WEBHOOK_SECRET from .env
+    # (dev default only when the variable is genuinely unset).
+    secret = settings.engine_webhook_secret
     expected = "sha256=" + hmac.new(
         secret.encode(), body, hashlib.sha256).hexdigest()
     return not hmac.compare_digest(sig, expected)

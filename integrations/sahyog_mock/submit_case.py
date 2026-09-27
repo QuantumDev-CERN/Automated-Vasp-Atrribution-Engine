@@ -1,9 +1,15 @@
 """Submit a test case to the mock SAHYOG server."""
 import sys
+from pathlib import Path
 
 import httpx
 
-MOCK_URL = "http://localhost:8091"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from api.core.config import settings  # noqa: E402
+
+# SAHYOG_MOCK_URL from .env (dev default only when genuinely unset).
+MOCK_URL = settings.sahyog_mock_url
 
 
 def main() -> None:

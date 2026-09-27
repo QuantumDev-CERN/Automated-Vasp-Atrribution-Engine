@@ -82,7 +82,11 @@ async def section_evm() -> None:
     from engine.adapters.evm import EvmAdapter
 
     load_env()
-    evm = EvmAdapter(Chain.ETHEREUM, api_key=os.environ["ETHERSCAN_API_KEY"])
+    api_key = os.environ.get("ETHERSCAN_API_KEY")
+    if not api_key:
+        raise SectionSkip(
+            "ETHERSCAN_API_KEY not set — add it to .env to run this section")
+    evm = EvmAdapter(Chain.ETHEREUM, api_key=api_key)
 
     # recent token->token swaps through the V2 router
     raw = await evm._api("account", "txlist", V2_ROUTER, 25)

@@ -9,7 +9,6 @@ The docker-backed path (real Redis + Postgres + arq worker) is covered
 by scripts/smoke_m7_integration.py, gated on M7_INTEGRATION=1.
 """
 import asyncio
-import os
 import sys
 from pathlib import Path
 from uuid import UUID
@@ -18,8 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
 
-os.environ.setdefault("ENGINE_WEBHOOK_SECRET",
-                      "dev-webhook-secret-change-me")
+# NOTE: the webhook secret comes from Settings (ENGINE_WEBHOOK_SECRET in
+# .env) on both sides — engine signs with settings.engine_webhook_secret
+# and the mock verifies with the same value. No env default is injected
+# here; Settings carries the dev default when the variable is unset.
 
 from api.core.config import settings  # noqa: E402
 from engine.adapters.base import (  # noqa: E402
