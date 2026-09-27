@@ -224,3 +224,66 @@ class SolanaAdapter(ChainAdapter):
             return body.get("result") == "ok"
         except Exception:  # noqa: BLE001
             return False
+
+    # ---------- M4: SPL token-account owner resolution ----------
+
+    async def get_token_account_owner(self, token_account: str) -> Optional[str]:
+        """Resolve an SPL token account to its owner wallet (M4).
+
+        getAccountInfo(jsonParsed) -> data.parsed.info.owner. Returns None
+        when the account is not a parsable token account.
+        """
+        body = await self._post_json(
+            {
+                "jsonrpc": "2.0",
+                "id": next(_req_id),
+                "method": "getAccountInfo",
+                "params": [token_account, {"encoding": "jsonParsed"}],
+            }
+        )
+        try:
+            return body["result"]["value"]["data"]["parsed"]["info"]["owner"]
+        except (TypeError, KeyError):
+            return None
+
+    async def resolve_token_owners(
+        self, txs: list[CanonicalTx]
+    ) -> list[CanonicalTx]:
+        """Rewrite SPL transfer parties from token accounts to owner wallets.
+
+        Returns new CanonicalTx objects (inputs untouched); the original
+        token account is preserved in raw["token_account"]. Accounts that
+        do not resolve keep their token-account address. Explicit opt-in —
+        not applied in get_token_transfers, so M2 behavior is unchanged.
+        """
+        accounts: dict[str, None] = {}
+        for tx in txs:
+            for p in tx.inputs + tx.outputs:
+                accounts.setdefault(p.address, None)
+        owners: dict[str, Optional[str]] = {}
+        for acct in accounts:
+            owners[acct] = await self.get_token_account_owner(acct)
+
+        out: list[CanonicalTx] = []
+        for tx in txs:
+            def _rw(parties: list[FlowParty]) -> list[FlowParty]:
+                rew = []
+                for p in parties:
+                    owner = owners.get(p.address)
+                    if owner and owner != p.address:
+                        rew.append(FlowParty(address=owner, value=p.value))
+                    else:
+                        rew.append(p)
+                return rew
+
+            new_inputs, new_outputs = _rw(tx.inputs), _rw(tx.outputs)
+            raw = dict(tx.raw)
+            raw["token_account"] = {
+                p.address: owners[p.address]
+                for p in tx.inputs + tx.outputs
+                if owners.get(p.address)
+            }
+            out.append(tx.model_copy(update={
+                "inputs": new_inputs, "outputs": new_outputs, "raw": raw,
+            }))
+        return out

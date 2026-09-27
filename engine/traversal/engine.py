@@ -10,10 +10,17 @@ applying a typology-specific strategy per hop kind:
                      VASP-controlled hot wallet. Retroactively back-label
                      every input address of the sweep tx as "sweep-source"
                      (per-user deposit addresses of the same entity, plan 6).
+  dex-swap        -> keep walking: same trader, new asset. The asset
+                     change is recorded on the visited node.
+  bridge-lock     -> STOP: value left the chain. The deposit is recorded
+                     in result.bridge_deposits for M5+ cross-chain
+                     correlation (engine/decoding/correlation.py scores
+                     candidate withdrawals).
+  mixer-deposit   -> STOP: funds entered the anonymity set. The depositor
+                     is labeled "mixer-depositor".
 
-Any M4 hop kind encountered (dex-swap, bridge-lock, ...) is treated as a
-terminal "unhandled-hop" — traversal never silently walks through a hop
-type it does not understand.
+swap-service is still an unhandled-hop terminal: detection needs a curated
+address list (M5+).
 """
 from __future__ import annotations
 
@@ -24,12 +31,7 @@ from typing import Optional
 from ..classifier.hops import HopKind, classify_graph
 from ..graph.builder import TxGraph, _COINBASE
 
-_M4_KINDS = {
-    HopKind.DEX_SWAP,
-    HopKind.BRIDGE_LOCK,
-    HopKind.SWAP_SERVICE,
-    HopKind.MIXER_DEPOSIT,
-}
+_UNHANDLED_KINDS = {HopKind.SWAP_SERVICE}
 
 
 @dataclass
@@ -46,12 +48,27 @@ class VisitedNode:
     via_kind: Optional[str] = None
     via_confidence: Optional[float] = None
     side_branch: bool = False  # peeled payment, not the change branch
+    note: Optional[str] = None  # e.g. "USDT->WETH" on dex-swap hops
 
 
 @dataclass
 class Terminal:
     address: str
-    reason: str  # dead-end | sweep-consolidation | max-hops | max-nodes | unhandled-hop:<kind>
+    reason: str  # dead-end | sweep-consolidation | bridge-lock |
+    # mixer-deposit | max-hops | max-nodes | unhandled-hop:<kind>
+
+
+@dataclass
+class BridgeDeposit:
+    """Value locked into (or released from) a bridge — cross-chain lead."""
+
+    address: str       # depositor on the lock side
+    tx_hash: str
+    chain: str
+    bridge: str        # "stargate" | "wormhole" | ...
+    direction: str     # "lock" | "release"
+    asset_symbol: Optional[str]
+    value: str         # smallest units
 
 
 @dataclass
@@ -62,6 +79,7 @@ class TraversalResult:
     came_from: dict[str, tuple[str, str]] = field(default_factory=dict)
     # address -> parent address, tx_hash (path reconstruction for M6 reports)
     labels_applied: dict[str, list[str]] = field(default_factory=dict)
+    bridge_deposits: list[BridgeDeposit] = field(default_factory=list)
 
 
 def _ensure_classified(graph: TxGraph) -> None:
@@ -107,7 +125,7 @@ def traverse(
             kind = attrs.get("hop_kind", HopKind.DIRECT_TRANSFER.value)
             tx_hash = attrs.get("tx_hash", "")
 
-            if kind in {k.value for k in _M4_KINDS}:
+            if kind in {k.value for k in _UNHANDLED_KINDS}:
                 result.terminals.append(
                     Terminal(tgt, f"unhandled-hop:{kind}")
                 )
@@ -118,6 +136,28 @@ def traverse(
                 _back_label_sweep(graph, result, tx_hash)
                 visited_hop.setdefault(tgt, hop + 1)
                 continue
+
+            if kind == HopKind.BRIDGE_LOCK.value:
+                result.terminals.append(Terminal(tgt, "bridge-lock"))
+                _record_bridge_deposit(graph, result, address, tx_hash, attrs)
+                visited_hop.setdefault(tgt, hop + 1)
+                continue
+
+            if kind == HopKind.MIXER_DEPOSIT.value:
+                result.terminals.append(Terminal(tgt, "mixer-deposit"))
+                graph.label(address, "mixer-depositor")
+                result.labels_applied.setdefault(address, [])
+                if "mixer-depositor" not in result.labels_applied[address]:
+                    result.labels_applied[address].append("mixer-depositor")
+                visited_hop.setdefault(tgt, hop + 1)
+                continue
+
+            note: Optional[str] = None
+            if kind == HopKind.DEX_SWAP.value:
+                # same trader, new asset — keep walking, record the change
+                in_s = attrs.get("hop_in_symbol") or "?"
+                out_s = attrs.get("hop_out_symbol") or "?"
+                note = f"{in_s}->{out_s}"
 
             if hop + 1 > config.max_hops:
                 result.terminals.append(Terminal(tgt, "max-hops"))
@@ -136,6 +176,7 @@ def traverse(
                     via_kind=kind,
                     via_confidence=attrs.get("hop_confidence"),
                     side_branch=side,
+                    note=note,
                 )
             )
             if kind == HopKind.PEEL.value:
@@ -161,3 +202,38 @@ def _back_label_sweep(
         result.labels_applied.setdefault(party.address, [])
         if "sweep-source" not in result.labels_applied[party.address]:
             result.labels_applied[party.address].append("sweep-source")
+
+
+def _record_bridge_deposit(
+    graph: TxGraph,
+    result: TraversalResult,
+    src: str,
+    tx_hash: str,
+    attrs: dict,
+) -> None:
+    """Record a bridge lock/release as a cross-chain lead for M5+."""
+    tx = graph.tx(tx_hash)
+    if tx is None:
+        return
+    direction = attrs.get("hop_direction", "?")
+    bridge = attrs.get("hop_bridge", "?")
+    value, symbol = "0", tx.asset.symbol
+    # the leg touching the bridge contract carries the locked amount
+    for p in tx.inputs + tx.outputs:
+        if direction == "lock" and p.address == src:
+            value = p.value
+            break
+        if direction == "release" and p.address != src:
+            value = p.value
+            break
+    result.bridge_deposits.append(
+        BridgeDeposit(
+            address=src,
+            tx_hash=tx_hash,
+            chain=tx.chain.value,
+            bridge=bridge,
+            direction=direction,
+            asset_symbol=symbol,
+            value=value,
+        )
+    )

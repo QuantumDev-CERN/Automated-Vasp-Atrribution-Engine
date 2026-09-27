@@ -47,6 +47,32 @@ class FlowParty(BaseModel):
     value: str = "0"
 
 
+class DexSwap(BaseModel):
+    """One DEX swap decoded from a transaction (M4).
+
+    Produced by engine.decoding either from same-tx transfer pairing
+    (method="transfer-pairing", works on adapter data alone) or from Swap
+    event logs in the tx receipt (method="event-log", exact amounts).
+
+    Values are smallest-unit integers as strings. *_contract is None for
+    the native asset leg (use *_symbol, e.g. "ETH").
+    """
+
+    tx_hash: str
+    chain: Chain
+    trader: str
+    router: Optional[str] = None
+    dex: Optional[str] = None  # "uniswap-v2" | "uniswap-v3" | ... | "unknown"
+    in_contract: Optional[str] = None
+    in_symbol: Optional[str] = None
+    in_value: str = "0"
+    out_contract: Optional[str] = None
+    out_symbol: Optional[str] = None
+    out_value: str = "0"
+    method: str = "transfer-pairing"
+    confidence: float = 0.8
+
+
 class CanonicalTx(BaseModel):
     tx_hash: str
     chain: Chain
@@ -57,6 +83,9 @@ class CanonicalTx(BaseModel):
     asset: Asset
     fee: Optional[str] = None
     raw: dict[str, Any] = Field(default_factory=dict)
+    # M4: set by engine/decoding when this tx is (a leg of) a DEX swap.
+    # None for every other tx — M1/M2/M3 code paths ignore it.
+    dex_swap: Optional[DexSwap] = None
 
 
 class AdapterError(Exception):

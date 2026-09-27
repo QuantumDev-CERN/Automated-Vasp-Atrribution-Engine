@@ -94,6 +94,26 @@ class EvmAdapter(ChainAdapter):
         except AdapterError:
             return False
 
+    async def get_transaction_receipt(self, tx_hash: str) -> dict:
+        """Full tx receipt (incl. logs) via the Etherscan proxy module.
+
+        Used by engine/decoding for exact Swap-event decoding. Not part of
+        the default normalization path — decoding is opt-in post-processing.
+        """
+        data = await self._get_json(
+            _BASE_URL,
+            params={
+                "chainid": _CHAIN_IDS[self.chain],
+                "module": "proxy",
+                "action": "eth_getTransactionReceipt",
+                "txhash": tx_hash,
+                "apikey": self.api_key,
+            },
+        )
+        if not isinstance(data, dict) or not data.get("result"):
+            raise AdapterError(f"no receipt for {tx_hash}: {data}")
+        return data["result"]
+
     # -- normalization -----------------------------------------------------
     def _normalize_native(self, tx: dict) -> CanonicalTx:
         sender = tx.get("from", "")

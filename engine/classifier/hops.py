@@ -1,8 +1,13 @@
 """Hop classification (master plan 4.4).
 
 Tags every transfer edge with one of the plan's hop kinds:
-  direct-transfer | peel | sweep-candidate   (M3 — implemented)
-  dex-swap | bridge-lock | swap-service | mixer-deposit   (M4 — enum only)
+  direct-transfer | peel | sweep-candidate   (M3)
+  dex-swap | bridge-lock | mixer-deposit     (M4)
+  swap-service                            (M5+ — enum only)
+
+Order of checks: explicit DEX annotation first, then deterministic
+registry hits (bridge/mixer contracts), then the M3 heuristics. A
+registry hit or a decoded swap always wins over a heuristic guess.
 
 Heuristics are deliberately conservative and always carry a reason string.
 A wrong peel call sends the whole trace down the wrong branch, so when in
@@ -29,6 +34,8 @@ from typing import Any, Optional
 
 from ..adapters.base import CanonicalTx, Chain
 from ..graph.builder import TxGraph, _COINBASE
+from ..knowledge.bridges import bridge_for
+from ..knowledge.mixers import mixer_for
 
 UTXO_CHAINS = {Chain.BITCOIN.value}
 
@@ -46,11 +53,12 @@ class HopKind(str, Enum):
     DIRECT_TRANSFER = "direct-transfer"
     PEEL = "peel"
     SWEEP_CANDIDATE = "sweep-candidate"
-    # M4 kinds — defined now so the 4.4 contract is complete; not yet emitted.
     DEX_SWAP = "dex-swap"
     BRIDGE_LOCK = "bridge-lock"
-    SWAP_SERVICE = "swap-service"
     MIXER_DEPOSIT = "mixer-deposit"
+    # swap-service — defined for the 4.4 contract; detection needs a curated
+    # swap-service address list (M5+).
+    SWAP_SERVICE = "swap-service"
 
 
 @dataclass
@@ -80,6 +88,9 @@ def classify_edge(
             HopKind.DIRECT_TRANSFER, 0.5, "no source tx in graph", {}
         )
 
+    m4 = _classify_m4(tx, src, dst)
+    if m4 is not None:
+        return m4
     sweep = _classify_sweep(tx, dst)
     if sweep is not None:
         return sweep
@@ -92,6 +103,75 @@ def classify_edge(
         "default: no peel/sweep pattern matched",
         {"tx_hash": tx.tx_hash},
     )
+
+
+def _classify_m4(
+    tx: CanonicalTx, src: str, dst: str
+) -> Optional[HopClassification]:
+    """Deterministic M4 kinds: decoded swaps and registry hits.
+
+    Runs before the M3 heuristics — an explicit decode or a known-contract
+    counterparty always wins over a heuristic guess.
+    """
+    # DEX swap legs: any edge touching the trader in a decoded swap tx.
+    # Both legs (trader->router, router->trader) are the same economic hop:
+    # asset A became asset B at this trader.
+    s = tx.dex_swap
+    if s is not None and (src == s.trader or dst == s.trader):
+        in_sym = s.in_symbol or s.in_contract or "?"
+        out_sym = s.out_symbol or s.out_contract or "?"
+        return HopClassification(
+            HopKind.DEX_SWAP,
+            s.confidence,
+            f"dex-swap via {s.dex or 'unknown dex'}: "
+            f"{in_sym} -> {out_sym} ({s.method})",
+            {
+                "tx_hash": tx.tx_hash,
+                "dex": s.dex,
+                "router": s.router,
+                "in_symbol": s.in_symbol,
+                "in_contract": s.in_contract,
+                "in_value": s.in_value,
+                "out_symbol": s.out_symbol,
+                "out_contract": s.out_contract,
+                "out_value": s.out_value,
+                "method": s.method,
+            },
+        )
+
+    # Bridge: counterparty is a known bridge contract.
+    for addr, direction in ((dst, "lock"), (src, "release")):
+        b = bridge_for(tx.chain, addr)
+        if b is not None:
+            return HopClassification(
+                HopKind.BRIDGE_LOCK,
+                0.9,
+                f"bridge {direction} via {b.name} "
+                f"({addr[:12]}… on {tx.chain.value})",
+                {
+                    "tx_hash": tx.tx_hash,
+                    "bridge": b.name,
+                    "direction": direction,
+                    "contract": b.contract,
+                },
+            )
+
+    # Mixer: funds sent INTO a known pool = entering the anonymity set.
+    m = mixer_for(tx.chain, dst)
+    if m is not None:
+        return HopClassification(
+            HopKind.MIXER_DEPOSIT,
+            0.95,
+            f"mixer deposit: {m.name} {m.denomination} pool "
+            f"({dst[:12]}… on {tx.chain.value})",
+            {
+                "tx_hash": tx.tx_hash,
+                "mixer": m.name,
+                "denomination": m.denomination,
+                "pool": m.pool,
+            },
+        )
+    return None
 
 
 def _classify_sweep(tx: CanonicalTx, dst: str) -> Optional[HopClassification]:
@@ -193,5 +273,11 @@ def classify_graph(graph: TxGraph) -> dict[tuple[str, str, str], HopClassificati
         graph.g[src][dst][key]["peel_payment"] = bool(
             c.details.get("peel_payment")
         )
+        # M4 details ride on the edge so traversal/reporting can use them
+        # without re-deriving (bridge name/direction, mixer, dex in/out).
+        for k in ("bridge", "direction", "mixer", "denomination",
+                  "dex", "router", "in_symbol", "out_symbol"):
+            if c.details.get(k) is not None:
+                graph.g[src][dst][key][f"hop_{k}"] = c.details[k]
         out[(src, dst, key)] = c
     return out

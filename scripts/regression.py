@@ -22,6 +22,8 @@ STAGES_LIVE = [
     ("live: adapter smokes M1+M2", [sys.executable, "scripts/smoke_adapters.py"]),
     ("live: graph/classifier/traversal smoke M3",
      [sys.executable, "scripts/smoke_m3.py"]),
+    ("live: DEX/bridge/mixer decoding smoke M4",
+     [sys.executable, "scripts/smoke_m4.py"]),
 ]
 
 
