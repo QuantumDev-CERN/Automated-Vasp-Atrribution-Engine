@@ -28,6 +28,9 @@ engine/delivery/__init__.py
 engine/delivery/webhook.py
 engine/graph/__init__.py
 engine/graph/builder.py
+engine/graph/memory_store.py
+engine/graph/neo4j_store.py
+engine/graph/store.py
 engine/intel/__init__.py
 engine/intel/sanctions.py
 engine/jobs/__init__.py
@@ -62,6 +65,7 @@ tests/test_m4.py
 tests/test_m5.py
 tests/test_m6.py
 tests/test_m7.py
+tests/test_m8.py
 vasp_attribution_engine.egg-info/PKG-INFO
 vasp_attribution_engine.egg-info/SOURCES.txt
 vasp_attribution_engine.egg-info/dependency_links.txt

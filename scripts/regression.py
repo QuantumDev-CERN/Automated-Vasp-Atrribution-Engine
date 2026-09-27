@@ -25,6 +25,8 @@ STAGES_UNIT = [
      [sys.executable, "scripts/smoke_m7.py"]),
     ("unit: M7 integration (SKIPs without docker services)",
      [sys.executable, "scripts/smoke_m7_integration.py"]),
+    ("unit: M8 graph store (memory) + Neo4j integration (SKIPs w/o docker)",
+     [sys.executable, "scripts/smoke_m8_integration.py"]),
 ]
 STAGES_LIVE = [
     ("live: adapter smokes M1+M2", [sys.executable, "scripts/smoke_adapters.py"]),

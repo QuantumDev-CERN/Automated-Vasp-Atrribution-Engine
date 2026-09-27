@@ -16,6 +16,7 @@ from typing import Callable, Optional
 
 from ..adapters.base import Chain, ChainAdapter
 from ..graph.builder import TxGraph, expand_address
+from ..graph.store import GraphStore
 from ..intel.sanctions import SanctionsList
 from ..report import (
     InvestigationReport, ReportInput, build_report,
@@ -61,6 +62,9 @@ class PipelineDeps:
     max_expand_addresses: int = 25
     traversal_config: TraversalConfig = field(
         default_factory=TraversalConfig)
+    # M8: persist the traced subgraph; None = skip persistence.
+    graph_store: Optional[GraphStore] = None
+    case_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -190,6 +194,20 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         attribution=attribution, risk=risk, terminal_vasp=terminal_vasp,
         route=route, drafted_request=drafted_request,
         bridge_deposits=tuple(result.bridge_deposits)))
+
+    # M8: materialize the traced subgraph + tag terminal addresses with
+    # their traversal classification (persistent vocabulary for M9).
+    if deps.graph_store is not None and deps.case_id:
+        stats = await deps.graph_store.save_case_subgraph(
+            deps.case_id, graph,
+            meta={"subject": address, "chain": chain,
+                  "terminal": terminal_address,
+                  "terminal_reason": terminal_reason})
+        for t in result.terminals:
+            await deps.graph_store.tag_address(
+                t.address, chain, t.reason,
+                source=f"traversal:{deps.case_id}", case_id=deps.case_id)
+        print(f"[graph] case {deps.case_id}: persisted {stats}")
 
     return TraceResult(
         address=address, chain=chain, path=tuple(path),

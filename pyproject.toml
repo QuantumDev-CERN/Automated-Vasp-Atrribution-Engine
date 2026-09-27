@@ -15,6 +15,7 @@ dependencies = [
     "python-dateutil>=2.9",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
+    "neo4j>=5.20",  # M8: persistent graph store (cross-case knowledge graph)
 ]
 
 [project.optional-dependencies]
@@ -22,7 +23,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
 ]
-# M7: installed (postgres persistence). Phase 2: "neo4j>=5.20" for the cross-case knowledge graph.
+# M7: installed (postgres persistence). M8: neo4j installed (graph store).
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

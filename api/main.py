@@ -15,12 +15,15 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from engine.graph import get_graph_store
     from engine.jobs import init_queue
     from engine.store import init_store
     app.state.store = await init_store(settings)
     app.state.queue = await init_queue(settings)
+    app.state.graph_store = get_graph_store()  # M8: Neo4j or memory
     yield
     await app.state.queue.close()
+    await app.state.graph_store.close()
     engine = getattr(app.state.store, "engine", None)
     if engine is not None:
         await engine.dispose()

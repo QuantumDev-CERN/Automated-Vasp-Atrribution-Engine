@@ -22,11 +22,13 @@ def _redis_dsn() -> str:
 
 async def startup(ctx) -> None:
     from api.core.config import settings
+    from engine.graph import get_graph_store
     from engine.store import init_store
 
     ctx["settings"] = settings
     ctx["store"] = await init_store(settings)
     ctx["sanctions"] = _load_sanctions(settings)
+    ctx["graph_store"] = get_graph_store()  # M8: Neo4j or memory fallback
     log.info("worker startup complete")
 
 
@@ -44,6 +46,9 @@ async def shutdown(ctx) -> None:
     engine = getattr(ctx.get("store"), "engine", None)
     if engine is not None:
         await engine.dispose()
+    gs = ctx.get("graph_store")
+    if gs is not None:
+        await gs.close()
 
 
 async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
@@ -75,7 +80,9 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
             suspected_offence=case_rec.notes,
         )
         deps = PipelineDeps(adapter_factory=make_adapter,
-                            sanctions=sanctions)
+                            sanctions=sanctions,
+                            graph_store=ctx.get("graph_store"),
+                            case_id=str(cid))
         result = await run_trace_pipeline(address, chain, case, deps)
 
         from datetime import datetime
