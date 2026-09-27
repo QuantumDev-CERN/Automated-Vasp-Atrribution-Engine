@@ -15,6 +15,7 @@ Requires-Dist: python-dateutil>=2.9
 Requires-Dist: sqlalchemy[asyncio]>=2.0
 Requires-Dist: asyncpg>=0.29
 Requires-Dist: neo4j>=5.20
+Requires-Dist: pycryptodome>=3.23.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.23; extra == "dev"

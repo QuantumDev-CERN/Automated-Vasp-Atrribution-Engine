@@ -202,6 +202,13 @@ def _back_label_sweep(
         result.labels_applied.setdefault(party.address, [])
         if "sweep-source" not in result.labels_applied[party.address]:
             result.labels_applied[party.address].append("sweep-source")
+        # M16: a sweep input that is itself a recognized deposit proxy
+        # (EIP-1167 / CREATE2 forwarder) is an exchange deposit address,
+        # not an anonymous source — tag it specifically.
+        if party.proxy_kind:
+            graph.label(party.address, "deposit-proxy")
+            if "deposit-proxy" not in result.labels_applied[party.address]:
+                result.labels_applied[party.address].append("deposit-proxy")
 
 
 def _record_bridge_deposit(

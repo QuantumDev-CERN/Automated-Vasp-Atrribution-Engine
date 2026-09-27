@@ -5,7 +5,7 @@ Unit tests always run (fast, offline). Live smoke tests run only with
 opt-in.
 
   uv run python scripts/regression.py           # unit stages (CI-safe)
-  uv run python scripts/regression.py --live    # + live smokes (M1-M4)
+  uv run python scripts/regression.py --live    # + live smokes (M1-M4, M16)
 
 Exit code is 0 only if every enabled stage passes.
 """
@@ -34,6 +34,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m3.py"]),
     ("live: DEX swap + SPL-owner decoding smoke M4",
      [sys.executable, "scripts/smoke_m4.py"]),
+    ("live: CREATE2 deposit-proxy detection smoke M16",
+     [sys.executable, "scripts/smoke_m16.py"]),
 ]
 
 

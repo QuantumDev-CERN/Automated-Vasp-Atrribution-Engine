@@ -33,7 +33,38 @@ class SectionSkip(Exception):
     endpoint flaky), not a code regression. Loud skip, not a pass."""
 
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"  # keccak("Transfer(address,address,uint256)") — verified on mainnet
-SWAP_EXACT_TOKENS_SELECTOR = "0x38ed1739"  # swapExactTokensForTokens(address,uint256,...)
+# fee-on-transfer variants: the transfer legs can carry fee-deducted
+# amounts (and the pairing may flip direction), so the cross-check is
+# unordered there — the two layers must still describe the same movement.
+_FEE_ON_TRANSFER_SELECTORS = {
+    "0xb6f9de95",  # swapExactTokensForTokensSupportingFeeOnTransferTokens
+    "0x4a25d94a",  # swapExactTokensForETHSupportingFeeOnTransferTokens
+    "0x18cbafe5",  # swapExactETHForTokensSupportingFeeOnTransferTokens
+}
+
+
+def _layers_agree(events, found, fee_on_transfer: bool) -> bool:
+    if fee_on_transfer:
+        return {found[0].in_value, found[0].out_value} == {
+            events[0].in_value,
+            events[-1].out_value,
+        }
+    return (
+        found[0].in_value == events[0].in_value
+        and found[0].out_value == events[-1].out_value
+    )
+# Uniswap V2 router swap entrypoints. The smoke only needs *a* live swap tx —
+# the decode layers work off receipt logs, not the selector — so accept the
+# common variants; router traffic mix drifts hour to hour (2026-09-27: the
+# txlist page carried zero plain swapExactTokensForTokens calls).
+SWAP_SELECTORS = {
+    "0x38ed1739",  # swapExactTokensForTokens
+    "0xb6f9de95",  # swapExactTokensForTokensSupportingFeeOnTransferTokens
+    "0x791ac947",  # swapExactETHForTokens
+    "0xfb3bdb41",  # swapExactTokensForETH
+    "0x4a25d94a",  # swapExactTokensForETHSupportingFeeOnTransferTokens
+    "0x18cbafe5",  # swapExactETHForTokensSupportingFeeOnTransferTokens
+}
 V2_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 
 # --- M15: BSC / PancakeSwap (public RPC; Etherscan free tier skips BSC) ---
@@ -105,19 +136,24 @@ async def section_evm() -> None:
             "ETHERSCAN_API_KEY not set — add it to .env to run this section")
     evm = EvmAdapter(Chain.ETHEREUM, api_key=api_key)
 
-    # recent token->token swaps through the V2 router
+    # recent swaps through the V2 router (any swap entrypoint — see above)
     raw = await evm._api("account", "txlist", V2_ROUTER, 25)
     swaps = [t for t in raw
              if t.get("isError") == "0"
-             and (t.get("input") or "").startswith(SWAP_EXACT_TOKENS_SELECTOR)]
-    assert swaps, "no swapExactTokensForTokens txs in router txlist page"
+             and (t.get("input") or "")[:10] in SWAP_SELECTORS]
+    assert swaps, "no swap txs in router txlist page"
     print(f"[evm] candidate swap txs: {len(swaps)}")
 
     decoded = paired = None
     used_hash = ""
-    for cand in swaps[:5]:
+    for cand in swaps[:8]:
         h = cand["hash"]
         receipt = await evm.get_transaction_receipt(h)
+        if not isinstance(receipt, dict):
+            # free-tier rate limit can return a message string instead of
+            # a receipt object — transient, skip this candidate
+            print(f"[evm]   {h[:12]}… rate-limited receipt, skipping")
+            continue
         logs = receipt.get("logs") or []
         trader = cand.get("from", "")
         events = decode_swap_receipts(logs, h, Chain.ETHEREUM, trader)
@@ -128,14 +164,15 @@ async def section_evm() -> None:
         if not events or not found:
             continue
         # trader-facing ends must agree: first hop's in == paired in,
-        # last hop's out == paired out (multi-hop routes)
-        if (found[0].in_value == events[0].in_value
-                and found[0].out_value == events[-1].out_value):
+        # last hop's out == paired out (multi-hop routes). Fee-on-transfer
+        # variants compare unordered (fee can shift leg amounts/direction).
+        fee = (cand.get("input") or "")[:10] in _FEE_ON_TRANSFER_SELECTORS
+        if _layers_agree(events, found, fee):
             decoded, paired = events[-1], found[0]
             used_hash = h
             break
-    assert decoded, "no Swap event decoded from 5 candidate txs"
-    assert paired, "transfer-pairing found no swap in 5 candidate receipts"
+    assert decoded, "no Swap event decoded from candidate txs"
+    assert paired, "transfer-pairing found no swap in candidate receipts"
 
     print(f"[evm] tx {used_hash[:18]}…")
     print(f"[evm] event-log : in={decoded.in_value} "

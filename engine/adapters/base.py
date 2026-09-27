@@ -50,6 +50,12 @@ class FlowParty(BaseModel):
     # not applicable (account-based chains). Used by the peel classifier's
     # script-type match factor (master plan section 2).
     script_type: Optional[str] = None
+    # Deposit-proxy marker for EVM chains (M16): set by
+    # decoding.proxies.annotate_deposit_proxies when the output address
+    # looks like an exchange deposit proxy (eip1167-minimal-proxy |
+    # create2-deployed | eip1167-via-create2). None = not a proxy or
+    # not checked (annotation is opt-in enrichment).
+    proxy_kind: Optional[str] = None
 
 
 class DexSwap(BaseModel):

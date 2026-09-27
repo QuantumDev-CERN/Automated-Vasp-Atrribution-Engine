@@ -114,6 +114,29 @@ class EvmAdapter(ChainAdapter):
             raise AdapterError(f"no receipt for {tx_hash}: {data}")
         return data["result"]
 
+    async def get_code(self, address: str) -> str:
+        """Runtime bytecode at `address` via eth_getCode (proxy module).
+
+        Used by engine/decoding/proxies for deposit-proxy detection. Not part
+        of the default normalization path — decoding is opt-in
+        post-processing. NOTE: the free Etherscan tier only serves Ethereum
+        for the proxy module; BSC/Polygon raise AdapterError here.
+        """
+        data = await self._get_json(
+            _BASE_URL,
+            params={
+                "chainid": _CHAIN_IDS[self.chain],
+                "module": "proxy",
+                "action": "eth_getCode",
+                "address": address,
+                "tag": "latest",
+                "apikey": self.api_key,
+            },
+        )
+        if not isinstance(data, dict) or "result" not in data:
+            raise AdapterError(f"no code for {address}: {data}")
+        return data["result"]
+
     # -- normalization -----------------------------------------------------
     def _normalize_native(self, tx: dict) -> CanonicalTx:
         sender = tx.get("from", "")

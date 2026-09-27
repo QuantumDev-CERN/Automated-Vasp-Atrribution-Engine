@@ -10,6 +10,7 @@ python-dateutil>=2.9
 sqlalchemy[asyncio]>=2.0
 asyncpg>=0.29
 neo4j>=5.20
+pycryptodome>=3.23.0
 
 [dev]
 pytest>=8.0
