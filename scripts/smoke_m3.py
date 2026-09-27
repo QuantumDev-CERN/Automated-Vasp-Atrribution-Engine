@@ -12,13 +12,34 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from engine.adapters.base import AdapterError
 from engine.adapters.bitcoin import BitcoinAdapter
 from engine.classifier import classify_graph
 from engine.graph import TxGraph, expand_address
 from engine.traversal import TraversalConfig, traverse
 
 
+def _transient(message: str) -> bool:
+    m = message.lower()
+    return any(
+        h in m
+        for h in ("429", "502", "503", "504", "timeout", "timed out",
+                  "connecterror", "connection reset", "temporarily unavailable")
+    )
+
+
 async def main() -> None:
+    try:
+        await _smoke()
+    except AdapterError as e:
+        if _transient(str(e)):
+            print(f"[m3] SKIP — mempool.space throttled/unreachable: {e}")
+            return
+        raise
+    print("\nSMOKE M3 OK — build -> classify -> traverse on live BTC data.")
+
+
+async def _smoke() -> None:
     btc = BitcoinAdapter()
     graph = TxGraph()
 
@@ -61,7 +82,6 @@ async def main() -> None:
     assert r.visited, "traversal visited nothing"
     assert kinds, "no edges classified"
     await btc.close()
-    print("\nSMOKE M3 OK — build -> classify -> traverse on live BTC data.")
 
 
 if __name__ == "__main__":

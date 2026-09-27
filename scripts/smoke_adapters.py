@@ -1,6 +1,12 @@
 """Live smoke tests for M1/M2 chain adapters. Reads keys from .env.
 
 Run: uv run python scripts/smoke_adapters.py
+
+Each adapter section is independent: a transient indexer error
+(rate-limit 429, 502/503/504, timeouts) reports SKIP, not FAIL — a free
+public endpoint throttling us is not broken code. Failed assertions and
+unexpected exceptions still FAIL hard. If EVERY section skips, the script
+fails: that means no network at all, not throttling.
 """
 import asyncio
 import os
@@ -8,6 +14,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from engine.adapters.base import AdapterError  # noqa: E402
 
 
 def load_env() -> None:
@@ -18,16 +26,36 @@ def load_env() -> None:
             os.environ.setdefault(k.strip(), v.strip())
 
 
-async def main() -> None:
+_TRANSIENT_HINTS = (
+    "429", "502", "503", "504", "timeout", "timed out", "connecterror",
+    "connection reset", "temporarily unavailable",
+)
+
+
+def _transient(message: str) -> bool:
+    m = message.lower()
+    return any(h in m for h in _TRANSIENT_HINTS)
+
+
+async def _run_section(name: str, fn) -> str:
+    """pass | skip. Anything that is not a transient AdapterError propagates."""
+    try:
+        await fn()
+    except AdapterError as e:
+        if _transient(str(e)):
+            print(f"[{name}] SKIP — indexer throttled/unreachable: {e}")
+            return "skip"
+        raise
+    print(f"[{name}] section passed")
+    return "pass"
+
+
+# ------------------------------------------------------------------ sections
+
+async def section_eth(eth_key: str) -> None:
     from engine.adapters.base import Chain
     from engine.adapters.evm import EvmAdapter
-    from engine.adapters.tron import TronAdapter, _to_base58
 
-    load_env()
-    eth_key = os.environ["ETHERSCAN_API_KEY"]
-    tron_key = os.environ["TRONGRID_API_KEY"]
-
-    # ---- EVM: Ethereum ----
     evm = EvmAdapter(Chain.ETHEREUM, api_key=eth_key)
     vitalik = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
     txs = await evm.get_transactions(vitalik, limit=5)
@@ -41,10 +69,13 @@ async def main() -> None:
         print(f"  {t.asset.symbol} {t.tx_hash[:12]}… "
               f"{t.inputs[0].address[:10]} → {t.outputs[0].address[:10]}")
     assert txs, "expected ETH transactions for vitalik.eth"
+    await evm.close()
 
-    # ---- EVM: BSC + Polygon via Covalent (Etherscan free tier is ETH-only) ----
+
+async def section_covalent(cov_key: str) -> None:
+    from engine.adapters.base import Chain
     from engine.adapters.covalent import CovalentAdapter
-    cov_key = os.environ["COVALENT_API_KEY"]
+
     vitalik = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
     for chain in (Chain.BSC, Chain.POLYGON):
         a = CovalentAdapter(chain, api_key=cov_key)
@@ -66,7 +97,10 @@ async def main() -> None:
     assert await bsc.get_transactions(vitalik, limit=3), "expected BSC txs"
     await bsc.close()
 
-    # ---- Tron ----
+
+async def section_tron(tron_key: str) -> None:
+    from engine.adapters.tron import TronAdapter, _to_base58
+
     tron = TronAdapter(api_key=tron_key)
     assert await tron.health_check(), "trongrid health check failed"
     print("[tron] health: True")
@@ -104,9 +138,12 @@ async def main() -> None:
     # hex→base58 sanity on a synthetic vector (round-trip shape, not a guess)
     assert _to_base58("41" + "00" * 20).startswith("T")
     assert _to_base58("TXYZ") == "TXYZ"
+    await tron.close()
 
-    # ---- Bitcoin (mempool.space; Blockchair keyless is IP-blacklisted → 430) ----
+
+async def section_bitcoin() -> None:
     from engine.adapters.bitcoin import BitcoinAdapter
+
     btc = BitcoinAdapter()
     assert await btc.health_check(), "mempool.space health failed"
     genesis = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
@@ -121,8 +158,10 @@ async def main() -> None:
     assert all(p.value.isdigit() for p in t0.inputs + t0.outputs), "non-int sat value"
     await btc.close()
 
-    # ---- Solana (public RPC; Solscan key plan 401s every v2.0 endpoint) ----
+
+async def section_solana() -> None:
     from engine.adapters.solana import SolanaAdapter, WSOL_MINT
+
     sol = SolanaAdapter()
     assert await sol.health_check(), "solana RPC health failed"
     print("[sol] health: True")
@@ -138,12 +177,13 @@ async def main() -> None:
     assert all(t.asset.contract for t in spl), "SPL transfer missing mint"
 
     # native: bootstrap a real SOL-active wallet = fee payer of a recent wSOL tx
+    # (limit kept small: the public RPC rate-limits aggressively)
     sigs = await sol.get_signatures(WSOL_MINT, 3)
     assert sigs, "expected signatures for wSOL mint"
     detail = await sol._tx_detail(sigs[0]["signature"])
     payer = detail["transaction"]["message"]["accountKeys"][0]["pubkey"]
     print(f"[sol] probing active wallet {payer[:12]}…")
-    native = await sol.get_transactions(payer, limit=25)
+    native = await sol.get_transactions(payer, limit=10)
     print(f"[sol] native SOL transfers: {len(native)}")
     for t in native[:2]:
         print(f"  {t.tx_hash[:12]}… {t.inputs[0].address[:10]} → "
@@ -152,9 +192,33 @@ async def main() -> None:
     assert native[0].asset.symbol == "SOL"
     await sol.close()
 
-    await evm.close()
-    await tron.close()
-    print("\nSMOKE OK — EVM (eth/bsc/polygon) + Tron + Bitcoin + Solana live.")
+
+# ------------------------------------------------------------------ runner
+
+async def main() -> None:
+    load_env()
+    eth_key = os.environ["ETHERSCAN_API_KEY"]
+    tron_key = os.environ["TRONGRID_API_KEY"]
+    cov_key = os.environ["COVALENT_API_KEY"]
+
+    sections = [
+        ("eth", lambda: section_eth(eth_key)),
+        ("covalent-bsc-polygon", lambda: section_covalent(cov_key)),
+        ("tron", lambda: section_tron(tron_key)),
+        ("bitcoin", section_bitcoin),
+        ("solana", section_solana),
+    ]
+    results: dict[str, str] = {}
+    for name, fn in sections:
+        results[name] = await _run_section(name, fn)
+
+    passed = [n for n, s in results.items() if s == "pass"]
+    skipped = [n for n, s in results.items() if s == "skip"]
+    print(f"\nSMOKE {'OK' if not skipped else 'OK with skips'} — "
+          f"{len(passed)} passed, {len(skipped)} skipped"
+          + (f" ({', '.join(skipped)})" if skipped else ""))
+    if len(skipped) == len(sections):
+        sys.exit("SMOKE FAILED — every section skipped; check network connectivity")
 
 
 if __name__ == "__main__":

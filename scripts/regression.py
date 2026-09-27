@@ -31,13 +31,15 @@ def run_stage(name: str, cmd: list[str]) -> bool:
         p = subprocess.run(
             cmd, cwd=ROOT, capture_output=True, text=True, timeout=900
         )
-        tail = (p.stdout + p.stderr).strip().splitlines()[-12:]
-        print("\n".join(tail))
+        out = (p.stdout + p.stderr).strip()
+        print("\n".join(out.splitlines()[-12:]))
         ok = p.returncode == 0
+        skipped = ok and "SKIP" in (p.stdout or "")
     except subprocess.TimeoutExpired:
         print("TIMEOUT after 900s")
-        ok = False
-    print(f"--- {'PASS' if ok else 'FAIL'}: {name} ---", flush=True)
+        ok, skipped = False, False
+    status = "FAIL" if not ok else ("PASS (with skips)" if skipped else "PASS")
+    print(f"--- {status}: {name} ---", flush=True)
     return ok
 
 
