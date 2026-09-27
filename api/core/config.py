@@ -30,5 +30,10 @@ class Settings(BaseSettings):
     # minute marks each hour: 15 -> :00, :15, :30, :45)
     watch_poll_minutes: int = 15
 
+    # M12 RBAC: when true, X-API-Key is required on every protected
+    # route. Default false keeps local/dev and existing tests working;
+    # every action is still audit-logged under the system identity.
+    auth_enforced: bool = False
+
 
 settings = Settings()

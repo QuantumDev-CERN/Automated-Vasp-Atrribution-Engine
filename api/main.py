@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from api.core.audit import AuditMiddleware
 from api.core.config import settings
 from api.core.logging import setup_logging
+from api.routers.admin import router as admin_router
 from api.routers.cases import router as cases_router
 from api.routers.graph import router as graph_router
 from api.routers.health import router as health_router
@@ -43,3 +45,6 @@ app.include_router(graph_router)
 app.include_router(jobs_router)
 app.include_router(reports_router)
 app.include_router(watchlist_router)
+app.include_router(admin_router)
+
+app.add_middleware(AuditMiddleware)  # M12: durable audit trail

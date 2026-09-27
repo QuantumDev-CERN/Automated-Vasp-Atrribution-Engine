@@ -4,10 +4,16 @@ Poll GET /jobs/{job_id} for status (the master reference's async model:
 answers can arrive later; the webhook is the push channel)."""
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+from api.core.auth import (
+    assert_case_access, get_current_user, require_cap,
+)
+from engine.store.base import ApiUserRec
+
+router = APIRouter(prefix="/jobs", tags=["jobs"],
+                   dependencies=[Depends(require_cap("read"))])
 
 
 class TraceRequest(BaseModel):
@@ -16,12 +22,15 @@ class TraceRequest(BaseModel):
     chain: str | None = None    # defaults to the case's chain
 
 
-@router.post("/trace", status_code=202)
-async def start_trace(payload: TraceRequest, request: Request) -> dict:
+@router.post("/trace", status_code=202,
+              dependencies=[Depends(require_cap("write"))])
+async def start_trace(payload: TraceRequest, request: Request,
+                      user: ApiUserRec = Depends(get_current_user)) -> dict:
     store = request.app.state.store
     case = await store.get_case(payload.case_id)
     if case is None:
         raise HTTPException(404, "case not found")
+    assert_case_access(user, case)
     address = payload.address or case.suspect_address
     chain = payload.chain or case.chain
     job = await store.create_job(case.id, address, chain)
@@ -32,11 +41,15 @@ async def start_trace(payload: TraceRequest, request: Request) -> dict:
 
 
 @router.get("/{job_id}")
-async def get_job(job_id: UUID, request: Request) -> dict:
+async def get_job(job_id: UUID, request: Request,
+                  user: ApiUserRec = Depends(get_current_user)) -> dict:
     store = request.app.state.store
     job = await store.get_job(job_id)
     if job is None:
         raise HTTPException(404, "job not found")
+    case = await store.get_case(job.case_id)
+    if case is not None:
+        assert_case_access(user, case)
     report = await store.get_report_by_job(job.id)
     return {
         "job_id": str(job.id),

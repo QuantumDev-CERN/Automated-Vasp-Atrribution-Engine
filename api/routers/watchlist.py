@@ -10,12 +10,16 @@
 """
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from api.core.auth import require_cap
 from engine.store import WatchIn
 
-router = APIRouter(prefix="/watchlist", tags=["watchlist"])
+router = APIRouter(prefix="/watchlist", tags=["watchlist"],
+                   dependencies=[Depends(require_cap("read"))])
+
+_write = Depends(require_cap("write"))
 
 
 class WatchSubmit(BaseModel):
@@ -47,7 +51,7 @@ def _dump(w) -> dict:
     }
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[_write])
 async def add_watch(payload: WatchSubmit, request: Request) -> dict:
     rec = await request.app.state.store.add_watch(WatchIn(
         address=payload.address, chain=payload.chain, label=payload.label,
@@ -71,7 +75,7 @@ async def get_watch(watch_id: UUID, request: Request) -> dict:
     return _dump(rec)
 
 
-@router.patch("/{watch_id}")
+@router.patch("/{watch_id}", dependencies=[_write])
 async def patch_watch(watch_id: UUID, payload: WatchPatch,
                       request: Request) -> dict:
     if payload.status not in ("active", "paused"):
@@ -83,7 +87,7 @@ async def patch_watch(watch_id: UUID, payload: WatchPatch,
     return {"watch_id": str(watch_id), "status": payload.status}
 
 
-@router.delete("/{watch_id}")
+@router.delete("/{watch_id}", dependencies=[_write])
 async def remove_watch(watch_id: UUID, request: Request) -> dict:
     rec = await request.app.state.store.get_watch(watch_id)
     if rec is None:
@@ -106,7 +110,7 @@ async def list_alerts(watch_id: UUID, request: Request) -> dict:
         for a in alerts]}
 
 
-@router.post("/{watch_id}/check")
+@router.post("/{watch_id}/check", dependencies=[_write])
 async def check_now(watch_id: UUID, request: Request) -> dict:
     """Run one check cycle immediately (no waiting for the cron tick)."""
     from api.core.config import settings

@@ -2,15 +2,16 @@
 import logging
 
 from .base import (
-    AlertRec, CaseIn, CaseRec, JobRec, ReportIn, ReportRec, Store,
-    WatchIn, WatchRec,
+    AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec, CaseIn,
+    CaseRec, JobRec, ReportIn, ReportRec, Store, WatchIn, WatchRec,
 )
 from .memory import MemoryStore
 
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "AlertRec", "CaseIn", "CaseRec", "JobRec", "ReportIn", "ReportRec",
+    "AlertRec", "ApiUserIn", "ApiUserRec", "AuditEventIn", "AuditEventRec",
+    "CaseIn", "CaseRec", "JobRec", "ReportIn", "ReportRec",
     "Store", "WatchIn", "WatchRec",
     "MemoryStore", "create_store", "init_store",
 ]

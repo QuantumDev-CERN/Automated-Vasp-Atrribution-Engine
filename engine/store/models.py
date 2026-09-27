@@ -31,6 +31,7 @@ class Case(Base):
     officer_id: Mapped[str] = mapped_column(String(64), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(32), default="received")
+    jurisdiction: Mapped[str] = mapped_column(String(16), default="IN")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow)
 
@@ -111,5 +112,42 @@ class WatchAlert(Base):
     asset: Mapped[str] = mapped_column(String(64), default="")
     vasp_hit: Mapped[str | None] = mapped_column(String(128), nullable=True)
     delivered: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow)
+
+
+class ApiUser(Base):
+    """M12: API-key identities for RBAC. Only the key *hash* is stored —
+    the raw key is shown once at creation and never again."""
+    __tablename__ = "api_users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(128))
+    role: Mapped[str] = mapped_column(String(16))  # viewer|analyst|auditor|admin
+    jurisdictions: Mapped[list] = mapped_column(JSONB, default=list)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
+class AuditEvent(Base):
+    """M12: durable audit trail of every API action."""
+    __tablename__ = "audit_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True)
+    user_name: Mapped[str] = mapped_column(String(128), default="")
+    action: Mapped[str] = mapped_column(String(128))
+    target_type: Mapped[str] = mapped_column(String(32), default="")
+    target_id: Mapped[str] = mapped_column(String(128), default="")
+    jurisdiction: Mapped[str] = mapped_column(String(16), default="")
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    outcome: Mapped[str] = mapped_column(String(32), default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow)

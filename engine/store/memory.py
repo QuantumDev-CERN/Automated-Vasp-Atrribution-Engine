@@ -7,7 +7,10 @@ restart must use PostgresStore.
 import uuid
 from datetime import datetime, timezone
 
-from .base import AlertRec, CaseIn, CaseRec, JobRec, ReportIn, ReportRec, WatchIn, WatchRec
+from .base import (
+    AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec, CaseIn,
+    CaseRec, JobRec, ReportIn, ReportRec, WatchIn, WatchRec,
+)
 
 
 def _now() -> datetime:
@@ -21,11 +24,14 @@ class MemoryStore:
         self.reports: dict[uuid.UUID, ReportRec] = {}
         self.watches: dict[uuid.UUID, WatchRec] = {}
         self.alerts: dict[uuid.UUID, AlertRec] = {}
+        self.users: dict[uuid.UUID, ApiUserRec] = {}
+        self.audit: list[AuditEventRec] = []
 
     async def create_case(self, case: CaseIn) -> CaseRec:
         rec = CaseRec(id=uuid.uuid4(), fir_number=case.fir_number,
                       suspect_address=case.suspect_address, chain=case.chain,
                       officer_id=case.officer_id, notes=case.notes,
+                      jurisdiction=case.jurisdiction,
                       status="received", created_at=_now())
         self.cases[rec.id] = rec
         return rec
@@ -123,3 +129,48 @@ class MemoryStore:
         return sorted(
             (a for a in self.alerts.values() if a.watch_id == watch_id),
             key=lambda a: a.created_at)
+
+    # ------------------------------------------------------------ M12 RBAC
+    async def create_user(self, user: ApiUserIn,
+                          key_hash: str) -> ApiUserRec:
+        rec = ApiUserRec(id=uuid.uuid4(), name=user.name, role=user.role,
+                         jurisdictions=list(user.jurisdictions),
+                         key_hash=key_hash, created_at=_now())
+        self.users[rec.id] = rec
+        return rec
+
+    async def get_user(self, user_id: uuid.UUID) -> ApiUserRec | None:
+        return self.users.get(user_id)
+
+    async def get_user_by_key_hash(self, key_hash: str) -> ApiUserRec | None:
+        for rec in self.users.values():
+            if rec.key_hash == key_hash:
+                return rec
+        return None
+
+    async def list_users(self) -> list[ApiUserRec]:
+        return sorted(self.users.values(), key=lambda u: u.created_at)
+
+    async def revoke_user(self, user_id: uuid.UUID) -> None:
+        rec = self.users.get(user_id)
+        if rec is not None:
+            rec.revoked_at = _now()
+
+    async def log_audit(self, event: AuditEventIn) -> AuditEventRec:
+        rec = AuditEventRec(id=uuid.uuid4(), created_at=_now(), **{
+            f: getattr(event, f) for f in (
+                "user_id", "user_name", "action", "target_type", "target_id",
+                "jurisdiction", "ip", "outcome", "detail")})
+        self.audit.append(rec)
+        return rec
+
+    async def list_audit_events(
+        self, *, limit: int = 100, user_id: uuid.UUID | None = None,
+        action: str | None = None,
+    ) -> list[AuditEventRec]:
+        rows = self.audit
+        if user_id is not None:
+            rows = [e for e in rows if e.user_id == user_id]
+        if action is not None:
+            rows = [e for e in rows if e.action == action]
+        return list(reversed(rows[-limit:]))

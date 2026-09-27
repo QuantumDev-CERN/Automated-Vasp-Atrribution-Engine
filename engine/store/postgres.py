@@ -3,20 +3,39 @@ async + asyncpg. Used when DATABASE_URL/postgres_dsn points at a real
 database (docker-compose `postgres` service).
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from . import models
-from .base import CaseIn, CaseRec, JobRec, ReportIn, ReportRec
+from .base import (
+    AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec, CaseIn,
+    CaseRec, JobRec, ReportIn, ReportRec,
+)
 
 
 def _case(rec: models.Case) -> CaseRec:
     return CaseRec(id=rec.id, fir_number=rec.fir_number,
                    suspect_address=rec.suspect_address, chain=rec.chain,
                    officer_id=rec.officer_id, notes=rec.notes,
-                   status=rec.status, created_at=rec.created_at)
+                   status=rec.status, created_at=rec.created_at,
+                   jurisdiction=rec.jurisdiction or "IN")
+
+
+def _api_user(rec: models.ApiUser) -> ApiUserRec:
+    return ApiUserRec(id=rec.id, name=rec.name, role=rec.role,
+                      jurisdictions=list(rec.jurisdictions or []),
+                      key_hash=rec.key_hash, created_at=rec.created_at,
+                      revoked_at=rec.revoked_at)
+
+
+def _audit(rec: models.AuditEvent) -> AuditEventRec:
+    return AuditEventRec(
+        id=rec.id, user_id=rec.user_id, user_name=rec.user_name,
+        action=rec.action, target_type=rec.target_type,
+        target_id=rec.target_id, jurisdiction=rec.jurisdiction, ip=rec.ip,
+        outcome=rec.outcome, detail=rec.detail, created_at=rec.created_at)
 
 
 def _job(rec: models.TraceJob) -> JobRec:
@@ -56,7 +75,8 @@ class PostgresStore:
             rec = models.Case(fir_number=case.fir_number,
                               suspect_address=case.suspect_address,
                               chain=case.chain, officer_id=case.officer_id,
-                              notes=case.notes)
+                              notes=case.notes,
+                              jurisdiction=case.jurisdiction or "IN")
             s.add(rec)
             await s.commit()
             return _case(rec)
@@ -208,3 +228,65 @@ class PostgresStore:
                          delivered=r.delivered, created_at=r.created_at)
                 for r in res.scalars().all()
             ]
+
+    # ------------------------------------------------------------ M12 RBAC
+    async def create_user(self, user: ApiUserIn,
+                          key_hash: str) -> ApiUserRec:
+        async with self._sessions() as s:
+            rec = models.ApiUser(name=user.name, role=user.role,
+                                 jurisdictions=list(user.jurisdictions),
+                                 key_hash=key_hash)
+            s.add(rec)
+            await s.commit()
+            return _api_user(rec)
+
+    async def get_user(self, user_id: uuid.UUID) -> ApiUserRec | None:
+        async with self._sessions() as s:
+            rec = await s.get(models.ApiUser, user_id)
+            return _api_user(rec) if rec else None
+
+    async def get_user_by_key_hash(self, key_hash: str) -> ApiUserRec | None:
+        async with self._sessions() as s:
+            rec = (await s.execute(
+                select(models.ApiUser).where(
+                    models.ApiUser.key_hash == key_hash))).scalar_one_or_none()
+            return _api_user(rec) if rec else None
+
+    async def list_users(self) -> list[ApiUserRec]:
+        async with self._sessions() as s:
+            rows = (await s.execute(
+                select(models.ApiUser).order_by(
+                    models.ApiUser.created_at))).scalars().all()
+            return [_api_user(r) for r in rows]
+
+    async def revoke_user(self, user_id: uuid.UUID) -> None:
+        async with self._sessions() as s:
+            rec = await s.get(models.ApiUser, user_id)
+            if rec:
+                rec.revoked_at = datetime.now(timezone.utc)
+                await s.commit()
+
+    async def log_audit(self, event: AuditEventIn) -> AuditEventRec:
+        async with self._sessions() as s:
+            rec = models.AuditEvent(
+                user_id=event.user_id, user_name=event.user_name,
+                action=event.action, target_type=event.target_type,
+                target_id=event.target_id, jurisdiction=event.jurisdiction,
+                ip=event.ip, outcome=event.outcome, detail=event.detail)
+            s.add(rec)
+            await s.commit()
+            return _audit(rec)
+
+    async def list_audit_events(
+        self, *, limit: int = 100, user_id: uuid.UUID | None = None,
+        action: str | None = None,
+    ) -> list[AuditEventRec]:
+        async with self._sessions() as s:
+            q = select(models.AuditEvent).order_by(
+                models.AuditEvent.created_at.desc()).limit(limit)
+            if user_id is not None:
+                q = q.where(models.AuditEvent.user_id == user_id)
+            if action is not None:
+                q = q.where(models.AuditEvent.action == action)
+            rows = (await s.execute(q)).scalars().all()
+            return [_audit(r) for r in rows]
