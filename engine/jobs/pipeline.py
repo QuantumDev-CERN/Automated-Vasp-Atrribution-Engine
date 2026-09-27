@@ -189,15 +189,14 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
                     route, drafted_request = out
                     terminal_vasp = vasp
 
-    report = build_report(ReportInput(
-        case=case, subject_wallet=address, chain=chain,
-        attribution=attribution, risk=risk, terminal_vasp=terminal_vasp,
-        route=route, drafted_request=drafted_request,
-        bridge_deposits=tuple(result.bridge_deposits)))
-
     # M8: materialize the traced subgraph + tag terminal addresses with
     # their traversal classification (persistent vocabulary for M9).
+    # Done BEFORE the report so M9's cross-case brief can be certified
+    # inside it.
+    cross_case_brief = ""
     if deps.graph_store is not None and deps.case_id:
+        from ..intel import find_case_links, syndicate_summary
+
         stats = await deps.graph_store.save_case_subgraph(
             deps.case_id, graph,
             meta={"subject": address, "chain": chain,
@@ -207,7 +206,16 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
             await deps.graph_store.tag_address(
                 t.address, chain, t.reason,
                 source=f"traversal:{deps.case_id}", case_id=deps.case_id)
+        links = await find_case_links(deps.case_id, deps.graph_store)
+        cross_case_brief = syndicate_summary(links)
         print(f"[graph] case {deps.case_id}: persisted {stats}")
+
+    report = build_report(ReportInput(
+        case=case, subject_wallet=address, chain=chain,
+        attribution=attribution, risk=risk, terminal_vasp=terminal_vasp,
+        route=route, drafted_request=drafted_request,
+        bridge_deposits=tuple(result.bridge_deposits),
+        cross_case=cross_case_brief))
 
     return TraceResult(
         address=address, chain=chain, path=tuple(path),

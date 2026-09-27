@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from api.core.config import settings
 from api.core.logging import setup_logging
 from api.routers.cases import router as cases_router
+from api.routers.graph import router as graph_router
 from api.routers.health import router as health_router
 from api.routers.jobs import router as jobs_router
 from api.routers.reports import router as reports_router
@@ -32,10 +33,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="VASP Attribution Engine",
     description="Automated attribution of unknown crypto wallets to nearest VASPs",
-    version="0.7.0",
+    version="0.9.0",
     lifespan=lifespan,
 )
 app.include_router(health_router)
 app.include_router(cases_router)
+app.include_router(graph_router)
 app.include_router(jobs_router)
 app.include_router(reports_router)

@@ -34,6 +34,7 @@ class ReportInput:
     route: RouteRecommendation | None
     drafted_request: str = ""
     bridge_deposits: tuple = ()
+    cross_case: str = ""  # M9: syndicate brief (empty when no links)
 
 
 @dataclass(frozen=True)
@@ -113,7 +114,10 @@ Generated: {now} (UTC)
 9. CROSS-CHAIN LEADS
 {bridges}
 
-10. EVIDENTIARY CERTIFICATE
+10. CROSS-CASE LINKS
+{inp.cross_case or '(no other persisted case shares addresses with this case)'}
+
+11. EVIDENTIARY CERTIFICATE
     (see attached certificate)
 """
 
