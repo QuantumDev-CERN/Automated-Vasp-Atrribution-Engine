@@ -19,6 +19,8 @@ STAGES_UNIT = [
     ("unit: pytest (all milestones)", [sys.executable, "-m", "pytest", "-q"]),
     ("unit: VASP directory + routing smoke M5",
      [sys.executable, "scripts/smoke_m5.py"]),
+    ("unit: confidence + risk + report smoke M6",
+     [sys.executable, "scripts/smoke_m6.py"]),
 ]
 STAGES_LIVE = [
     ("live: adapter smokes M1+M2", [sys.executable, "scripts/smoke_adapters.py"]),
