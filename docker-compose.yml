@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vasp
+      POSTGRES_PASSWORD: vasp
+      POSTGRES_DB: vasp
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/vasp-dev-password
+    ports: ["7474:7474", "7687:7687"]
+    volumes: ["neodata:/data"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports: ["8000:8000"]
+    env_file: [.env]
+    depends_on: [postgres, neo4j, redis]
+
+  worker:
+    build: .
+    command: arq worker.WorkerSettings
+    env_file: [.env]
+    depends_on: [redis]
+
+  sahyog-mock:
+    build: .
+    command: uvicorn integrations.sahyog_mock.mock_server:app --host 0.0.0.0 --port 8091
+    ports: ["8091:8091"]
+
+volumes:
+  pgdata:
+  neodata:
