@@ -35,6 +35,7 @@ class ReportInput:
     drafted_request: str = ""
     bridge_deposits: tuple = ()
     cross_case: str = ""  # M9: syndicate brief (empty when no links)
+    calibration_version: str = ""  # M13: e.g. "cal-3"; "" = uncalibrated
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,11 @@ def _render_body(inp: ReportInput) -> str:
     ) or "  (no risk signals)"
     conf_notes = "\n".join(
         f"  - {n}" for n in inp.attribution.notes) or "  (none)"
+    calibration_line = (
+        f"   Calibration   : {inp.calibration_version} "
+        f"(empirical VASP-confirmation curve)"
+        if inp.calibration_version else
+        "   Calibration   : none (raw model — no confirmed outcomes yet)")
     bridges = "\n".join(
         f"  - {b.bridge} {b.direction} on {b.chain}: tx {b.tx_hash}"
         for b in inp.bridge_deposits) or "  (none)"
@@ -97,6 +103,7 @@ Generated: {now} (UTC)
 5. ATTRIBUTION
    Terminal VASP : {vasp_line}
    Confidence    : {inp.attribution.overall:.2f} (path-composite, 0..1)
+{calibration_line}
    Confidence notes:
 {conf_notes}
 
@@ -131,6 +138,7 @@ def build_report(inp: ReportInput) -> InvestigationReport:
         "chain": inp.chain,
         "terminal_reason": inp.attribution.terminal_reason,
         "terminal_vasp": inp.terminal_vasp.name if inp.terminal_vasp else None,
+        "calibration_version": inp.calibration_version or None,
     }
     cert = issue_certificate(body, inputs)
     full_text = (body

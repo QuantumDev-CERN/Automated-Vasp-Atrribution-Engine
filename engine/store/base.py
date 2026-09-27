@@ -156,6 +156,43 @@ class AuditEventRec(AuditEventIn):
     created_at: datetime = field(default=None)  # type: ignore[assignment]
 
 
+# -------------------------------------------------------------- M13 feedback
+
+VALID_OUTCOMES = ("confirmed", "refuted", "inconclusive")
+
+
+@dataclass
+class FeedbackOutcomeIn:
+    case_id: UUID
+    vasp: str  # attributed VASP name the cooperation request went to
+    predicted_confidence: float  # overall confidence reported at trace time
+    outcome: str  # one of VALID_OUTCOMES
+    notes: str = ""
+
+
+@dataclass
+class FeedbackOutcomeRec(FeedbackOutcomeIn):
+    id: UUID = field(default=None)  # type: ignore[assignment]
+    recorded_by: str = ""
+    created_at: datetime = field(default=None)  # type: ignore[assignment]
+
+
+@dataclass(frozen=True)
+class CalibrationModelRec:
+    """One versioned confidence-calibration curve.
+
+    bucket_values[i] = calibrated accuracy for decile i (centers
+    0.05..0.95); bucket_counts[i] = confirmed+refuted samples in it.
+    A model with n_outcomes == 0 is the identity (no behavior change).
+    """
+    version: str  # "cal-1", "cal-2", ...
+    created_at: datetime
+    created_by: str
+    n_outcomes: int
+    bucket_values: tuple[float, ...]
+    bucket_counts: tuple[int, ...]
+
+
 class Store(Protocol):
     async def create_case(self, case: CaseIn) -> CaseRec: ...
     async def get_case(self, case_id: UUID) -> CaseRec | None: ...
@@ -197,3 +234,19 @@ class Store(Protocol):
         self, *, limit: int = 100, user_id: UUID | None = None,
         action: str | None = None,
     ) -> list[AuditEventRec]: ...
+
+    # -- M13: feedback loop --------------------------------------
+    async def record_outcome(
+        self, outcome: FeedbackOutcomeIn, recorded_by: str,
+    ) -> FeedbackOutcomeRec: ...
+    async def list_outcomes(
+        self, *, limit: int = 1000,
+        outcome: str | None = None,
+    ) -> list[FeedbackOutcomeRec]: ...
+    async def save_calibration(
+        self, model: CalibrationModelRec,
+    ) -> CalibrationModelRec: ...
+    async def get_calibration(
+        self, version: str | None = None,
+    ) -> CalibrationModelRec | None: ...
+    async def list_calibrations(self) -> list[CalibrationModelRec]: ...

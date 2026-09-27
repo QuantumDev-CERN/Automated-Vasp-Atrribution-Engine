@@ -14,6 +14,9 @@ engine actually observed. No invented signals.
 """
 from dataclasses import dataclass, field
 
+from ..feedback import calibrate_confidence
+from ..store.base import CalibrationModelRec
+
 # Per-hop-kind discount factors. Rationale per kind:
 KIND_DISCOUNT: dict[str, float] = {
     # plain value movement, no heuristic involved
@@ -53,17 +56,23 @@ class AttributionScore:
     overall: float            # 0..1
     terminal_reason: str | None
     notes: tuple[str, ...] = ()
+    calibration_version: str | None = None  # M13: e.g. "cal-3"; None = raw
 
 
 def score_attribution(visited: list,
                       terminal_reason: str | None = None,
-                      bridge_explicit_destination: bool = False) -> AttributionScore:
+                      bridge_explicit_destination: bool = False,
+                      calibration: CalibrationModelRec | None = None,
+                      ) -> AttributionScore:
     """Score one traced path.
 
     visited: TraversalResult.visited (hop 0 = subject, no via_kind).
     terminal_reason: Terminal.reason string, if the trail terminated.
     bridge_explicit_destination: True when the bridge hop carried an
         explicitly parsed destination address (strong correlation).
+    calibration: M13 CalibrationModelRec — maps the final overall through
+        the empirical curve. None (or an empty model) leaves the score
+        unchanged.
     """
     hops: list[HopScore] = []
     cumulative = 1.0
@@ -105,9 +114,23 @@ def score_attribution(visited: list,
         notes.append("trail truncated at max-hops: confidence understates "
                      "a longer path")
 
+    # M13: empirical calibration is the LAST step — outcomes are recorded
+    # against the final reported number, so the curve must map it.
+    calibration_version: str | None = None
+    if calibration is not None:
+        calibrated, calibration_version = calibrate_confidence(
+            calibration, overall)
+        if calibration_version is not None:
+            notes.append(
+                f"confidence calibrated by {calibration_version} "
+                f"(empirical VASP-confirmation curve): "
+                f"{overall:.4f} -> {calibrated:.4f}")
+            overall = calibrated
+
     return AttributionScore(
         hops=tuple(hops),
         overall=round(max(0.0, min(1.0, overall)), 4),
         terminal_reason=terminal_reason,
         notes=tuple(notes),
+        calibration_version=calibration_version,
     )

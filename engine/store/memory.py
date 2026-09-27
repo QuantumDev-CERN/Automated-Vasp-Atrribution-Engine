@@ -8,8 +8,9 @@ import uuid
 from datetime import datetime, timezone
 
 from .base import (
-    AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec, CaseIn,
-    CaseRec, JobRec, ReportIn, ReportRec, WatchIn, WatchRec,
+    AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec,
+    CalibrationModelRec, CaseIn, CaseRec, FeedbackOutcomeIn,
+    FeedbackOutcomeRec, JobRec, ReportIn, ReportRec, WatchIn, WatchRec,
 )
 
 
@@ -26,6 +27,8 @@ class MemoryStore:
         self.alerts: dict[uuid.UUID, AlertRec] = {}
         self.users: dict[uuid.UUID, ApiUserRec] = {}
         self.audit: list[AuditEventRec] = []
+        self.outcomes: dict[uuid.UUID, FeedbackOutcomeRec] = {}
+        self.calibrations: dict[str, CalibrationModelRec] = {}
 
     async def create_case(self, case: CaseIn) -> CaseRec:
         rec = CaseRec(id=uuid.uuid4(), fir_number=case.fir_number,
@@ -174,3 +177,48 @@ class MemoryStore:
         if action is not None:
             rows = [e for e in rows if e.action == action]
         return list(reversed(rows[-limit:]))
+
+    # -------------------------------------------------------- M13 feedback
+    async def record_outcome(
+        self, outcome: FeedbackOutcomeIn, recorded_by: str,
+    ) -> FeedbackOutcomeRec:
+        rec = FeedbackOutcomeRec(
+            id=uuid.uuid4(), case_id=outcome.case_id, vasp=outcome.vasp,
+            predicted_confidence=outcome.predicted_confidence,
+            outcome=outcome.outcome, notes=outcome.notes,
+            recorded_by=recorded_by, created_at=_now())
+        self.outcomes[rec.id] = rec
+        return rec
+
+    async def list_outcomes(
+        self, *, limit: int = 1000, outcome: str | None = None,
+    ) -> list[FeedbackOutcomeRec]:
+        rows = list(self.outcomes.values())
+        if outcome is not None:
+            rows = [r for r in rows if r.outcome == outcome]
+        rows.sort(key=lambda r: r.created_at)
+        return rows[-limit:]
+
+    async def save_calibration(
+        self, model: CalibrationModelRec,
+    ) -> CalibrationModelRec:
+        self.calibrations[model.version] = model
+        return model
+
+    async def get_calibration(
+        self, version: str | None = None,
+    ) -> CalibrationModelRec | None:
+        if version is not None:
+            return self.calibrations.get(version)
+        if not self.calibrations:
+            return None
+        return self.calibrations[max(
+            self.calibrations,
+            key=lambda v: int(v.split("-")[1]) if v.split("-")[1].isdigit()
+            else 0)]
+
+    async def list_calibrations(self) -> list[CalibrationModelRec]:
+        return [self.calibrations[v] for v in sorted(
+            self.calibrations,
+            key=lambda v: int(v.split("-")[1]) if v.split("-")[1].isdigit()
+            else 0)]

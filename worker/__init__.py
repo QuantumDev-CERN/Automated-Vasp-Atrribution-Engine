@@ -83,7 +83,8 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
         deps = PipelineDeps(adapter_factory=make_adapter,
                             sanctions=sanctions,
                             graph_store=ctx.get("graph_store"),
-                            case_id=str(cid))
+                            case_id=str(cid),
+                            calibration=await store.get_calibration())
         result = await run_trace_pipeline(address, chain, case, deps)
 
         from datetime import datetime

@@ -151,3 +151,36 @@ class AuditEvent(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow)
+
+
+class FeedbackOutcome(Base):
+    """M13: confirmed VASP-cooperation outcomes — the ground truth the
+    confidence model is recalibrated against."""
+    __tablename__ = "feedback_outcomes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cases.id"))
+    vasp: Mapped[str] = mapped_column(String(128))
+    predicted_confidence: Mapped[float] = mapped_column()
+    outcome: Mapped[str] = mapped_column(
+        String(16))  # confirmed|refuted|inconclusive
+    notes: Mapped[str] = mapped_column(Text, default="")
+    recorded_by: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow)
+
+
+class CalibrationModel(Base):
+    """M13: versioned confidence-calibration curves. Immutable — a new
+    fit writes a new row, never updates history."""
+    __tablename__ = "calibration_models"
+
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow)
+    created_by: Mapped[str] = mapped_column(String(128), default="")
+    n_outcomes: Mapped[int] = mapped_column(default=0)
+    bucket_values: Mapped[list] = mapped_column(JSONB, default=list)
+    bucket_counts: Mapped[list] = mapped_column(JSONB, default=list)

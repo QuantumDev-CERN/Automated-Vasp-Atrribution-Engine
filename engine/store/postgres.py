@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from . import models
 from .base import (
-    AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec, CaseIn,
-    CaseRec, JobRec, ReportIn, ReportRec,
+    AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec,
+    CalibrationModelRec, CaseIn, CaseRec, FeedbackOutcomeIn,
+    FeedbackOutcomeRec, JobRec, ReportIn, ReportRec,
 )
 
 
@@ -36,6 +37,22 @@ def _audit(rec: models.AuditEvent) -> AuditEventRec:
         action=rec.action, target_type=rec.target_type,
         target_id=rec.target_id, jurisdiction=rec.jurisdiction, ip=rec.ip,
         outcome=rec.outcome, detail=rec.detail, created_at=rec.created_at)
+
+
+def _outcome(rec: models.FeedbackOutcome) -> FeedbackOutcomeRec:
+    return FeedbackOutcomeRec(
+        id=rec.id, case_id=rec.case_id, vasp=rec.vasp,
+        predicted_confidence=rec.predicted_confidence, outcome=rec.outcome,
+        notes=rec.notes, recorded_by=rec.recorded_by,
+        created_at=rec.created_at)
+
+
+def _calibration(rec: models.CalibrationModel) -> CalibrationModelRec:
+    return CalibrationModelRec(
+        version=rec.version, created_at=rec.created_at,
+        created_by=rec.created_by, n_outcomes=rec.n_outcomes,
+        bucket_values=tuple(rec.bucket_values or []),
+        bucket_counts=tuple(rec.bucket_counts or []))
 
 
 def _job(rec: models.TraceJob) -> JobRec:
@@ -290,3 +307,61 @@ class PostgresStore:
                 q = q.where(models.AuditEvent.action == action)
             rows = (await s.execute(q)).scalars().all()
             return [_audit(r) for r in rows]
+
+    # -------------------------------------------------------- M13 feedback
+    async def record_outcome(
+        self, outcome: FeedbackOutcomeIn, recorded_by: str,
+    ) -> FeedbackOutcomeRec:
+        async with self._sessions() as s:
+            rec = models.FeedbackOutcome(
+                case_id=outcome.case_id, vasp=outcome.vasp,
+                predicted_confidence=outcome.predicted_confidence,
+                outcome=outcome.outcome, notes=outcome.notes,
+                recorded_by=recorded_by)
+            s.add(rec)
+            await s.commit()
+            return _outcome(rec)
+
+    async def list_outcomes(
+        self, *, limit: int = 1000, outcome: str | None = None,
+    ) -> list[FeedbackOutcomeRec]:
+        async with self._sessions() as s:
+            q = select(models.FeedbackOutcome).order_by(
+                models.FeedbackOutcome.created_at).limit(limit)
+            if outcome is not None:
+                q = q.where(models.FeedbackOutcome.outcome == outcome)
+            rows = (await s.execute(q)).scalars().all()
+            return [_outcome(r) for r in rows]
+
+    async def save_calibration(
+        self, model: CalibrationModelRec,
+    ) -> CalibrationModelRec:
+        async with self._sessions() as s:
+            rec = models.CalibrationModel(
+                version=model.version, created_at=model.created_at,
+                created_by=model.created_by, n_outcomes=model.n_outcomes,
+                bucket_values=list(model.bucket_values),
+                bucket_counts=list(model.bucket_counts))
+            s.add(rec)
+            await s.commit()
+            return _calibration(rec)
+
+    async def get_calibration(
+        self, version: str | None = None,
+    ) -> CalibrationModelRec | None:
+        async with self._sessions() as s:
+            if version is not None:
+                rec = await s.get(models.CalibrationModel, version)
+                return _calibration(rec) if rec else None
+            rec = (await s.execute(
+                select(models.CalibrationModel).order_by(
+                    models.CalibrationModel.created_at.desc()).limit(1)
+            )).scalar_one_or_none()
+            return _calibration(rec) if rec else None
+
+    async def list_calibrations(self) -> list[CalibrationModelRec]:
+        async with self._sessions() as s:
+            rows = (await s.execute(
+                select(models.CalibrationModel).order_by(
+                    models.CalibrationModel.created_at))).scalars().all()
+            return [_calibration(r) for r in rows]

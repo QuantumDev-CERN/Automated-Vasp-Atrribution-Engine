@@ -65,6 +65,8 @@ class PipelineDeps:
     # M8: persist the traced subgraph; None = skip persistence.
     graph_store: Optional[GraphStore] = None
     case_id: Optional[str] = None
+    # M13: versioned confidence calibration; None = identity (no model yet).
+    calibration: Optional["CalibrationModelRec"] = None
 
 
 @dataclass(frozen=True)
@@ -173,7 +175,8 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
             if deps.sanctions.lookup(node.address):
                 sanctions_hits.append(node.address)
 
-    attribution = score_attribution(path, terminal_reason=terminal_reason)
+    attribution = score_attribution(path, terminal_reason=terminal_reason,
+                                      calibration=deps.calibration)
     risk = score_risk(path, terminal_reason=terminal_reason,
                       sanctions_hits=tuple(sanctions_hits))
 
@@ -215,7 +218,8 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         attribution=attribution, risk=risk, terminal_vasp=terminal_vasp,
         route=route, drafted_request=drafted_request,
         bridge_deposits=tuple(result.bridge_deposits),
-        cross_case=cross_case_brief))
+        cross_case=cross_case_brief,
+        calibration_version=attribution.calibration_version or ""))
 
     return TraceResult(
         address=address, chain=chain, path=tuple(path),
