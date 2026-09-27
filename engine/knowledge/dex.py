@@ -7,11 +7,15 @@ Address verification (2026-09-27):
   calling each contract's ``factory()`` view function through the Etherscan
   V2 ``proxy/eth_call`` endpoint; both return the Uniswap V3 factory
   (0x1F98431c8aD98523631AE4a59f267346ea31F984).
-- PancakeSwap V2 router (bsc): PancakeSwap's own docs, router-v2 page
-  (BSC address table).
-- PancakeSwap V3 Smart Router (bsc): corroborated by an independent
-  third-party integration table; not on-chain verified by us. PancakeSwap
-  V3 is a Uniswap V3 fork, so kind="v3" selects the V3 Swap event layout.
+- PancakeSwap V2 router (bsc): verified ON-CHAIN 2026-09-27 — called
+  ``factory()`` through the public BSC JSON-RPC endpoint; it returns
+  0xca143ce32fe78f1f7019d7d551a6402fc5350c73, the PancakeSwap V2 factory
+  (PancakeSwap's own docs, router-v2 page, corroborate the router address).
+- PancakeSwap V3 Smart Router (bsc): verified ON-CHAIN 2026-09-27 —
+  ``factory()`` returns 0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865, which
+  independent integration references (SubQuery docs, bnbchain-skills,
+  whal-e-bnb) all name as the PancakeSwap V3 factory. PancakeSwap V3 is a
+  Uniswap V3 fork, so kind="v3" selects the V3 Swap event layout.
 - QuickSwap V2 router (polygon): QuickSwap's official docs (V2 router02
   page) plus the PolygonScan "QuickSwap V2: Router" name tag.
 

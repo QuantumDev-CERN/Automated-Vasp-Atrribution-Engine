@@ -21,7 +21,11 @@ from engine.decoding.correlation import (
     rank_candidates,
     score_candidate,
 )
-from engine.decoding.swaps import decode_swap_receipt, detect_dex_swaps
+from engine.decoding.swaps import (
+    decode_swap_receipt,
+    decode_swap_receipts,
+    detect_dex_swaps,
+)
 from engine.graph.builder import TxGraph
 from engine.knowledge.bridges import bridge_for
 from engine.knowledge.dex import SWAP_TOPIC_V2, SWAP_TOPIC_V3, dex_for
@@ -173,6 +177,71 @@ def test_decode_v3_swap_event():
 def test_decode_no_swap_logs():
     logs = [{"address": "0xabc", "topics": [_word(1234)], "data": "0x"}]
     assert decode_swap_receipt(logs, "0xrx", ETH, TRADER) is None
+
+
+# ------------------------------------------------- M15: venue labels via router
+
+PANCAKE_V2_ROUTER = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
+PANCAKE_V3_ROUTER = "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4"
+
+
+def test_decode_v2_swap_pancakeswap_label():
+    # identical V2 event layout, but the router resolves to pancakeswap-v2
+    logs = [{
+        "address": "0xPool00000000000000000000000000000000000001",
+        "topics": [SWAP_TOPIC_V2, _addr_topic(PANCAKE_V2_ROUTER),
+                   _addr_topic(TRADER)],
+        "data": "0x" + "".join(_word(v)[2:] for v in (1000, 0, 0, 900)),
+    }]
+    s = decode_swap_receipt(logs, "0xrx", Chain.BSC, TRADER,
+                            token0=USDT, token1=WETH,
+                            router=PANCAKE_V2_ROUTER)
+    assert s is not None and s.dex == "pancakeswap-v2"
+    assert s.in_contract == USDT and s.in_value == "1000"
+    assert s.out_contract == WETH and s.out_value == "900"
+
+
+def test_decode_v3_swap_pancakeswap_label():
+    logs = [{
+        "address": "0xPool00000000000000000000000000000000000002",
+        "topics": [SWAP_TOPIC_V3, _addr_topic(PANCAKE_V3_ROUTER),
+                   _addr_topic(TRADER)],
+        "data": "0x" + "".join(
+            _word(v)[2:] for v in (2**256 - 500, 450, 0, 0, 0)),
+    }]
+    got = decode_swap_receipts(logs, "0xrx", Chain.BSC, TRADER,
+                               router=PANCAKE_V3_ROUTER)
+    assert len(got) == 1 and got[0].dex == "pancakeswap-smart-router"
+    assert got[0].in_value == "450" and got[0].out_value == "500"
+
+
+def test_decode_router_case_insensitive():
+    # registry lookup lowercases — a checksummed router still resolves
+    logs = [{
+        "address": "0xPool00000000000000000000000000000000000001",
+        "topics": [SWAP_TOPIC_V2, _addr_topic(PANCAKE_V2_ROUTER),
+                   _addr_topic(TRADER)],
+        "data": "0x" + "".join(_word(v)[2:] for v in (1000, 0, 0, 900)),
+    }]
+    s = decode_swap_receipt(logs, "0xrx", Chain.BSC, TRADER,
+                            router=PANCAKE_V2_ROUTER.lower())
+    assert s is not None and s.dex == "pancakeswap-v2"
+
+
+def test_decode_unknown_router_keeps_family_default():
+    # no router, or a router outside the registry -> pre-M15 behavior
+    logs = [{
+        "address": "0xPool00000000000000000000000000000000000001",
+        "topics": [SWAP_TOPIC_V2, _addr_topic(ROUTER_V2), _addr_topic(TRADER)],
+        "data": "0x" + "".join(_word(v)[2:] for v in (1000, 0, 0, 900)),
+    }]
+    s = decode_swap_receipt(logs, "0xrx", ETH, TRADER,
+                            token0=USDT, token1=WETH)
+    assert s is not None and s.dex == "uniswap-v2"
+    s2 = decode_swap_receipt(logs, "0xrx", ETH, TRADER,
+                             token0=USDT, token1=WETH,
+                             router="0x000000000000000000000000000000000000dEaD")
+    assert s2 is not None and s2.dex == "uniswap-v2"
 
 
 # ---------------------------------------------------------------- classifier

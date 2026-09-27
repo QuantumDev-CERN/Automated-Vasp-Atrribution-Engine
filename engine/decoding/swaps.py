@@ -8,10 +8,12 @@ Two layers, cheapest first:
    only fires on an unambiguous 1-out/1-in per trader per tx, and gains
    confidence when a counterparty is a known DEX router.
 
-2. event-log — exact decode of Uniswap V2/V3 Swap events from the tx
-   receipt (needs EvmAdapter.get_transaction_receipt). Gives exact
-   in/out amounts at the pool level; token contracts are attached when
-   the caller supplies the pool's token0/token1.
+2. event-log — exact decode of V2/V3 Swap events from the tx receipt
+   (needs EvmAdapter.get_transaction_receipt). Gives exact in/out amounts
+   at the pool level; token contracts are attached when the caller supplies
+   the pool's token0/token1. PancakeSwap is a Uniswap fork, so its pools
+   emit the identical event layouts — the venue label comes from the
+   router address (via the DEX registry) when the caller passes one.
 
 Both produce DexSwap and annotate the involved CanonicalTx objects via
 tx.dex_swap, which the hop classifier turns into dex-swap edges.
@@ -161,8 +163,15 @@ def _decode_swap_log(
     trader: str,
     token0: Optional[str] = None,
     token1: Optional[str] = None,
+    dex_name: Optional[str] = None,
 ) -> Optional[DexSwap]:
-    """Decode one receipt log if it is a Uniswap V2/V3 Swap event."""
+    """Decode one receipt log if it is a V2/V3 Swap event.
+
+    The event layouts are identical across the Uniswap family (Uniswap,
+    PancakeSwap, QuickSwap, …) — ``dex_name`` selects the venue label and
+    comes from the DEX registry via the tx's router address. Without it the
+    label falls back to the Uniswap family name (pre-M15 behavior).
+    """
     topics = log.get("topics") or []
     if not topics:
         return None
@@ -185,7 +194,7 @@ def _decode_swap_log(
             return None  # no value moved — not a swap
         return DexSwap(
             tx_hash=tx_hash, chain=chain, trader=trader or sender,
-            router=None, dex="uniswap-v2",
+            router=None, dex=dex_name or "uniswap-v2",
             in_contract=in_t, out_contract=out_t,
             in_value=str(in_v), out_value=str(out_v),
             method="event-log", confidence=0.95,
@@ -204,12 +213,20 @@ def _decode_swap_log(
             return None
         return DexSwap(
             tx_hash=tx_hash, chain=chain, trader=trader or sender,
-            router=None, dex="uniswap-v3",
+            router=None, dex=dex_name or "uniswap-v3",
             in_contract=in_t, out_contract=out_t,
             in_value=str(in_v), out_value=str(out_v),
             method="event-log", confidence=0.95,
         )
     return None
+
+
+def _venue_name(chain: Chain, router: Optional[str]) -> Optional[str]:
+    """Router address -> DEX registry venue name; None when unknown."""
+    if not router:
+        return None
+    hit = dex_for(chain, router)
+    return hit.name if hit else None
 
 
 def decode_swap_receipt(
@@ -219,16 +236,22 @@ def decode_swap_receipt(
     trader: str,
     token0: Optional[str] = None,
     token1: Optional[str] = None,
+    router: Optional[str] = None,
 ) -> Optional[DexSwap]:
-    """Decode Uniswap V2/V3 Swap events from a tx receipt's logs.
+    """Decode V2/V3 Swap events from a tx receipt's logs.
 
     token0/token1 (the pool's tokens) are not in the event — pass them when
-    known so the swap carries contracts, not just amounts. Returns the
-    first Swap event found; multi-pool routes decode pool-by-pool, so the
-    caller can invoke per pool with the right tokens.
+    known so the swap carries contracts, not just amounts. Pass the tx's
+    router/counterparty address as ``router`` so the venue label resolves
+    through the DEX registry (e.g. "pancakeswap-v2" on BSC); without it the
+    label falls back to the Uniswap family name. Returns the first Swap
+    event found; multi-pool routes decode pool-by-pool, so the caller can
+    invoke per pool with the right tokens.
     """
+    venue = _venue_name(chain, router)
     for log in logs:
-        swap = _decode_swap_log(log, tx_hash, chain, trader, token0, token1)
+        swap = _decode_swap_log(log, tx_hash, chain, trader, token0, token1,
+                                venue)
         if swap:
             return swap
     return None
@@ -239,16 +262,19 @@ def decode_swap_receipts(
     tx_hash: str,
     chain: Chain,
     trader: str,
+    router: Optional[str] = None,
 ) -> list[DexSwap]:
     """Decode every V2/V3 Swap event in a receipt, in log order.
 
     Multi-hop routes emit one Swap event per pool; the trader-facing ends
     are swaps[0].in_value (what the trader gave) and swaps[-1].out_value
-    (what the trader got).
+    (what the trader got). ``router`` selects the venue label via the DEX
+    registry, as in decode_swap_receipt.
     """
+    venue = _venue_name(chain, router)
     swaps = []
     for log in logs:
-        swap = _decode_swap_log(log, tx_hash, chain, trader)
+        swap = _decode_swap_log(log, tx_hash, chain, trader, dex_name=venue)
         if swap:
             swaps.append(swap)
     return swaps
