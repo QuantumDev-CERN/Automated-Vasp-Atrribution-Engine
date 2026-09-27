@@ -106,9 +106,15 @@ async def section_covalent(cov_key: str) -> None:
     from engine.adapters.covalent import CovalentAdapter
 
     vitalik = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+    burn = "0x000000000000000000000000000000000000dEaD"
     for chain in (Chain.BSC, Chain.POLYGON):
         a = CovalentAdapter(chain, api_key=cov_key)
-        assert await a.health_check(), f"{chain.value} covalent health failed"
+        # Probe directly instead of `assert await a.health_check()`: the
+        # bool swallows the AdapterError, which both hides the reason
+        # (bad key? throttled? down?) and bypasses _run_section's
+        # transient-skip logic — a throttled indexer should SKIP the
+        # section, not FAIL the gate with a bare AssertionError.
+        await a._items(burn, 1)
         txs = await a.get_transactions(vitalik, limit=5)
         print(f"[{chain.value}] covalent native txs: {len(txs)}")
         if txs:  # parse path is shared code; BSC proves it, Polygon proves reachability
