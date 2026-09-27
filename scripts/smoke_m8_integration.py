@@ -16,6 +16,7 @@ Run:  M8_INTEGRATION=1 uv run python scripts/smoke_m8_integration.py
 import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -36,12 +37,27 @@ async def main() -> int:
     from engine.graph import TxGraph
     from engine.graph.neo4j_store import Neo4jGraphStore
 
-    try:
-        store = Neo4jGraphStore(settings.neo4j_uri, settings.neo4j_user,
-                                settings.neo4j_password)
-        store.ping()
-    except Exception as exc:  # noqa: BLE001
-        print(f"{SKIP} [{exc}]")
+    # Neo4j takes ~2 min to cold-boot on a fresh volume; Docker reports
+    # the container "Started" long before Bolt is ready. Retry the ping
+    # with backoff, then SKIP loudly (offline path is covered by
+    # tests/test_m8.py) — same retry-then-loud-skip pattern as the
+    # Solana SPL probe.
+    store = None
+    last_exc: Exception | None = None
+    for attempt in range(7):
+        try:
+            store = Neo4jGraphStore(settings.neo4j_uri, settings.neo4j_user,
+                                    settings.neo4j_password)
+            store.ping()
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < 6:
+                print(f"[neo4j] not ready yet (attempt {attempt + 1}/7), "
+                      f"waiting 15s ...")
+                time.sleep(15)
+    if store is None:
+        print(f"{SKIP} [{last_exc}]")
         return 0
     print(f"[neo4j] connected: {settings.neo4j_uri}")
 
