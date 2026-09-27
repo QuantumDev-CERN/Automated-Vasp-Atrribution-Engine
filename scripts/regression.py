@@ -5,7 +5,7 @@ Unit tests always run (fast, offline). Live smoke tests run only with
 opt-in.
 
   uv run python scripts/regression.py           # unit stages (CI-safe)
-  uv run python scripts/regression.py --live    # + live smokes (M1/M2/M3)
+  uv run python scripts/regression.py --live    # + live smokes (M1-M4)
 
 Exit code is 0 only if every enabled stage passes.
 """
@@ -17,12 +17,14 @@ ROOT = Path(__file__).resolve().parent.parent
 
 STAGES_UNIT = [
     ("unit: pytest (all milestones)", [sys.executable, "-m", "pytest", "-q"]),
+    ("unit: VASP directory + routing smoke M5",
+     [sys.executable, "scripts/smoke_m5.py"]),
 ]
 STAGES_LIVE = [
     ("live: adapter smokes M1+M2", [sys.executable, "scripts/smoke_adapters.py"]),
     ("live: graph/classifier/traversal smoke M3",
      [sys.executable, "scripts/smoke_m3.py"]),
-    ("live: DEX/bridge/mixer decoding smoke M4",
+    ("live: DEX swap + SPL-owner decoding smoke M4",
      [sys.executable, "scripts/smoke_m4.py"]),
 ]
 
