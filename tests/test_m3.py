@@ -107,6 +107,98 @@ def test_no_peel_when_change_address_reused():
     assert kinds[("A", "B")] == HopKind.DIRECT_TRANSFER
 
 
+def _tx_scripts(tx_hash, chain, asset, inputs, outputs):
+    """inputs/outputs: list of (address, value_int, script_type_or_None)."""
+    return CanonicalTx(
+        tx_hash=tx_hash,
+        chain=chain,
+        block_time=_T0,
+        inputs=[FlowParty(address=a, value=str(v), script_type=s)
+                for a, v, s in inputs],
+        outputs=[FlowParty(address=a, value=str(v), script_type=s)
+                 for a, v, s in outputs],
+        asset=asset,
+    )
+
+
+def test_peel_script_type_match_boosts_confidence():
+    txs = [
+        _tx_scripts("p1", Chain.BITCOIN, _BTC,
+                    [("A", 100_000, "p2wpkh")],
+                    [("B", 90_000, "p2wpkh"), ("C", 9_000, "p2pkh")]),
+    ]
+    g = TxGraph.build(txs)
+    out = classify_graph(g)
+    c = out[("A", "B", "p1:0->0")]
+    assert c.kind == HopKind.PEEL
+    assert c.details["script_match"] is True
+    assert "script-type match" in c.reason
+
+    # same shape, script types unknown -> lower confidence, still peel
+    g2 = TxGraph.build([_tx("p1", Chain.BITCOIN, _BTC,
+                            [("A", 100_000)], [("B", 90_000), ("C", 9_000)])])
+    c2 = classify_graph(g2)[("A", "B", "p1:0->0")]
+    assert c2.kind == HopKind.PEEL
+    assert c2.details["script_match"] is False
+    assert c.confidence > c2.confidence
+
+
+def test_peel_script_type_mismatch_vetoes():
+    # Peel-shaped, but the change candidate's script type differs from the
+    # spent input's -> the peel hypothesis is rejected for both edges.
+    g = TxGraph.build([
+        _tx_scripts("p1", Chain.BITCOIN, _BTC,
+                    [("A", 100_000, "p2wpkh")],
+                    [("B", 90_000, "p2tr"), ("C", 9_000, "p2pkh")]),
+    ])
+    out = classify_graph(g)
+    kinds = {(s, d): c.kind for (s, d, _), c in out.items()}
+    assert kinds[("A", "B")] == HopKind.DIRECT_TRANSFER
+    assert kinds[("A", "C")] == HopKind.DIRECT_TRANSFER
+    c = out[("A", "B", "p1:0->0")]
+    assert "script-type mismatch" in c.reason
+    assert c.details["script_match"] is False
+    assert not c.details.get("peel_payment", False)
+    assert out[("A", "C", "p1:0->1")].details.get("peel_payment") is not True
+
+
+def test_bitcoin_adapter_normalizes_script_types():
+    from engine.adapters.bitcoin import BitcoinAdapter
+
+    raw = {
+        "txid": "abc123",
+        "fee": 120,
+        "status": {"block_height": 800000, "block_time": 1700000000},
+        "vin": [{
+            "is_coinbase": False,
+            "prevout": {
+                "scriptpubkey_address": "bc1qinput",
+                "value": 100_000,
+                "scriptpubkey_type": "v0_p2wpkh",
+            },
+        }],
+        "vout": [
+            {"scriptpubkey_address": "bc1qchange", "value": 90_000,
+             "scriptpubkey_type": "v0_p2wpkh"},
+            {"scriptpubkey_address": "1Payment", "value": 9_000,
+             "scriptpubkey_type": "p2pkh"},
+            {"scriptpubkey_address": "bc1ptr", "value": 880,
+             "scriptpubkey_type": "v1_p2tr"},
+            {"scriptpubkey": "6a046f706a656374", "value": 0,
+             "scriptpubkey_type": "op_return"},
+        ],
+    }
+    tx = BitcoinAdapter()._normalize(raw)
+    assert tx is not None
+    assert tx.inputs[0].script_type == "p2wpkh"
+    by_addr = {p.address: p.script_type for p in tx.outputs}
+    assert by_addr == {
+        "bc1qchange": "p2wpkh",
+        "1Payment": "p2pkh",
+        "bc1ptr": "p2tr",
+    }
+
+
 # ------------------------------------------------------------------ sweep
 
 def _sweep_tx():
