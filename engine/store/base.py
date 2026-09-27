@@ -64,6 +64,39 @@ class ReportRec(ReportIn):
     created_at: datetime = field(default=None)  # type: ignore[assignment]
 
 
+@dataclass
+class WatchIn:
+    address: str
+    chain: str
+    label: str = ""
+    case_id: UUID | None = None
+    alert_url: str = ""
+    created_by: str = ""
+
+
+@dataclass
+class WatchRec(WatchIn):
+    id: UUID = field(default=None)  # type: ignore[assignment]
+    status: str = "active"  # active|paused
+    seen_hashes: list[str] = field(default_factory=list)
+    last_checked_at: datetime | None = None
+    created_at: datetime = field(default=None)  # type: ignore[assignment]
+
+
+@dataclass
+class AlertRec:
+    id: UUID
+    watch_id: UUID
+    tx_hash: str
+    direction: str  # in|out
+    counterparty: str
+    value: str
+    asset: str
+    vasp_hit: str | None
+    delivered: bool
+    created_at: datetime
+
+
 class Store(Protocol):
     async def create_case(self, case: CaseIn) -> CaseRec: ...
     async def get_case(self, case_id: UUID) -> CaseRec | None: ...
@@ -81,3 +114,14 @@ class Store(Protocol):
     async def get_report_by_job(self, job_id: UUID) -> ReportRec | None: ...
     async def set_webhook_status(self, report_id: UUID,
                                  status: str) -> None: ...
+
+    # M10: watchlist
+    async def add_watch(self, watch: WatchIn) -> WatchRec: ...
+    async def get_watch(self, watch_id: UUID) -> WatchRec | None: ...
+    async def list_watches(self, active_only: bool = True) -> list[WatchRec]: ...
+    async def set_watch(self, watch_id: UUID, status: str,
+                        seen_hashes: list[str] | None = None,
+                        last_checked_at: datetime | None = None) -> None: ...
+    async def remove_watch(self, watch_id: UUID) -> None: ...
+    async def record_alert(self, alert: AlertRec) -> AlertRec: ...
+    async def list_alerts(self, watch_id: UUID) -> list[AlertRec]: ...

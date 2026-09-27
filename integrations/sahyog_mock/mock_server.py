@@ -25,7 +25,19 @@ app = FastAPI(title="SAHYOG (mock)")
 
 _cases: dict[str, dict] = {}
 _webhooks: list[dict] = []
+_watch_alerts: list[dict] = []
 _seen_idempotency_keys: set[str] = set()
+
+
+def _bad_signature(request: Request, body: bytes) -> bool:
+    sig = request.headers.get("X-Engine-Signature")
+    if not sig:
+        return False  # lenient mode: unsigned accepted
+    secret = os.environ.get("ENGINE_WEBHOOK_SECRET",
+                            "dev-webhook-secret-change-me")
+    expected = "sha256=" + hmac.new(
+        secret.encode(), body, hashlib.sha256).hexdigest()
+    return not hmac.compare_digest(sig, expected)
 
 
 class CaseSubmit(BaseModel):
@@ -59,14 +71,8 @@ async def get_case(case_id: str) -> dict:
 async def receive_attribution(request: Request) -> JSONResponse:
     """Our engine POSTs trace results here as they resolve (M7)."""
     body = await request.body()
-    sig = request.headers.get("X-Engine-Signature")
-    if sig:
-        secret = os.environ.get("ENGINE_WEBHOOK_SECRET",
-                                "dev-webhook-secret-change-me")
-        expected = "sha256=" + hmac.new(
-            secret.encode(), body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig, expected):
-            return JSONResponse({"error": "bad signature"}, status_code=401)
+    if _bad_signature(request, body):
+        return JSONResponse({"error": "bad signature"}, status_code=401)
 
     idem = request.headers.get("X-Idempotency-Key")
     if idem and idem in _seen_idempotency_keys:
@@ -92,3 +98,33 @@ async def receive_attribution(request: Request) -> JSONResponse:
 @app.get("/sahyog/webhooks")
 async def list_webhooks() -> dict:
     return {"count": len(_webhooks), "webhooks": _webhooks}
+
+
+@app.post("/sahyog/webhook/watch-alert")
+async def receive_watch_alert(request: Request) -> JSONResponse:
+    """Our engine POSTs watchlist movement alerts here (M10)."""
+    body = await request.body()
+    if _bad_signature(request, body):
+        return JSONResponse({"error": "bad signature"}, status_code=401)
+
+    idem = request.headers.get("X-Idempotency-Key")
+    if idem and idem in _seen_idempotency_keys:
+        return JSONResponse({"ack": True, "duplicate": True,
+                             "alerts_received": len(_watch_alerts)})
+    if idem:
+        _seen_idempotency_keys.add(idem)
+
+    payload = await request.json()
+    _watch_alerts.append(
+        {
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "payload": payload,
+        }
+    )
+    return JSONResponse({"ack": True,
+                         "alerts_received": len(_watch_alerts)})
+
+
+@app.get("/sahyog/watch-alerts")
+async def list_watch_alerts() -> dict:
+    return {"count": len(_watch_alerts), "alerts": _watch_alerts}

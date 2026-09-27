@@ -7,7 +7,7 @@ restart must use PostgresStore.
 import uuid
 from datetime import datetime, timezone
 
-from .base import CaseIn, CaseRec, JobRec, ReportIn, ReportRec
+from .base import AlertRec, CaseIn, CaseRec, JobRec, ReportIn, ReportRec, WatchIn, WatchRec
 
 
 def _now() -> datetime:
@@ -19,6 +19,8 @@ class MemoryStore:
         self.cases: dict[uuid.UUID, CaseRec] = {}
         self.jobs: dict[uuid.UUID, JobRec] = {}
         self.reports: dict[uuid.UUID, ReportRec] = {}
+        self.watches: dict[uuid.UUID, WatchRec] = {}
+        self.alerts: dict[uuid.UUID, AlertRec] = {}
 
     async def create_case(self, case: CaseIn) -> CaseRec:
         rec = CaseRec(id=uuid.uuid4(), fir_number=case.fir_number,
@@ -79,3 +81,45 @@ class MemoryStore:
                                  status: str) -> None:
         if report_id in self.reports:
             self.reports[report_id].webhook_status = status
+
+    # ---------- M10: watchlist ----------
+
+    async def add_watch(self, watch: WatchIn) -> WatchRec:
+        rec = WatchRec(id=uuid.uuid4(), created_at=_now(), **{
+            f.name: getattr(watch, f.name)
+            for f in WatchIn.__dataclass_fields__.values()})
+        self.watches[rec.id] = rec
+        return rec
+
+    async def get_watch(self, watch_id: uuid.UUID) -> WatchRec | None:
+        return self.watches.get(watch_id)
+
+    async def list_watches(self, active_only: bool = True) -> list[WatchRec]:
+        recs = list(self.watches.values())
+        if active_only:
+            recs = [r for r in recs if r.status == "active"]
+        return sorted(recs, key=lambda r: r.created_at)
+
+    async def set_watch(self, watch_id: uuid.UUID, status: str,
+                        seen_hashes: list[str] | None = None,
+                        last_checked_at=None) -> None:
+        rec = self.watches.get(watch_id)
+        if rec is None:
+            return
+        rec.status = status
+        if seen_hashes is not None:
+            rec.seen_hashes = seen_hashes
+        if last_checked_at is not None:
+            rec.last_checked_at = last_checked_at
+
+    async def remove_watch(self, watch_id: uuid.UUID) -> None:
+        self.watches.pop(watch_id, None)
+
+    async def record_alert(self, alert: AlertRec) -> AlertRec:
+        self.alerts[alert.id] = alert
+        return alert
+
+    async def list_alerts(self, watch_id: uuid.UUID) -> list[AlertRec]:
+        return sorted(
+            (a for a in self.alerts.values() if a.watch_id == watch_id),
+            key=lambda a: a.created_at)

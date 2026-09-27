@@ -10,6 +10,7 @@ from api.routers.graph import router as graph_router
 from api.routers.health import router as health_router
 from api.routers.jobs import router as jobs_router
 from api.routers.reports import router as reports_router
+from api.routers.watchlist import router as watchlist_router
 
 setup_logging()
 
@@ -41,3 +42,4 @@ app.include_router(cases_router)
 app.include_router(graph_router)
 app.include_router(jobs_router)
 app.include_router(reports_router)
+app.include_router(watchlist_router)

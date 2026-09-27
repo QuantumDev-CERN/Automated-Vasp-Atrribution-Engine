@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -71,5 +71,45 @@ class ReportRecord(Base):
     certificate_statement: Mapped[str] = mapped_column(Text)
     webhook_status: Mapped[str] = mapped_column(
         String(32), default="pending")  # pending|delivered|failed
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow)
+
+
+class Watch(Base):
+    """M10: watchlist subscriptions — addresses under ongoing surveillance."""
+    __tablename__ = "watches"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    address: Mapped[str] = mapped_column(String(128))
+    chain: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str] = mapped_column(String(128), default="")
+    case_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cases.id"), nullable=True)
+    alert_url: Mapped[str] = mapped_column(String(512), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    seen_hashes: Mapped[list] = mapped_column(JSONB, default=list)
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow)
+
+
+class WatchAlert(Base):
+    """M10: one row per detected movement on a watched address."""
+    __tablename__ = "watch_alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    watch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("watches.id"))
+    tx_hash: Mapped[str] = mapped_column(String(128))
+    direction: Mapped[str] = mapped_column(String(8))  # in|out
+    counterparty: Mapped[str] = mapped_column(String(128))
+    value: Mapped[str] = mapped_column(String(64), default="")
+    asset: Mapped[str] = mapped_column(String(64), default="")
+    vasp_hit: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    delivered: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow)

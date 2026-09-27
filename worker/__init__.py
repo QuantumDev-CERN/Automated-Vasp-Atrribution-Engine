@@ -10,6 +10,7 @@ Run locally (needs redis + postgres, or falls back per settings):
 import logging
 from uuid import UUID
 
+from arq import cron
 from arq.connections import RedisSettings
 
 log = logging.getLogger(__name__)
@@ -116,8 +117,42 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
         raise
 
 
+def _watch_minutes() -> set[int]:
+    from api.core.config import settings
+    step = max(1, settings.watch_poll_minutes)
+    return set(range(0, 60, step))
+
+
+async def watcher_tick(ctx) -> dict:
+    """arq cron: poll every active watch, alert on new movements (M10)."""
+    from engine.jobs.pipeline import make_adapter
+    from engine.watch.watcher import process_watch
+
+    store = ctx["store"]
+    settings = ctx["settings"]
+    default_url = (settings.sahyog_mock_url.rstrip("/")
+                   + "/sahyog/webhook/watch-alert")
+    watches = await store.list_watches(active_only=True)
+    events_total = 0
+    for watch in watches:
+        try:
+            out = await process_watch(
+                store, watch, adapter_factory=make_adapter,
+                alert_url=watch.alert_url or default_url,
+                secret=settings.engine_webhook_secret)
+        except Exception:
+            log.exception("watch %s check failed", watch.id)
+            continue
+        events_total += len(out["events"])
+        log.info("watch %s: %d new event(s)", watch.id, len(out["events"]))
+    return {"watches_checked": len(watches), "events": events_total}
+
+
 class WorkerSettings:
     functions = [trace_wallet]
+    cron_jobs = [
+        cron(watcher_tick, minute=_watch_minutes(), run_at_startup=False),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     max_tries = 3

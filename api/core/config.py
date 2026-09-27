@@ -26,5 +26,9 @@ class Settings(BaseSettings):
     queue_backend: str = "auto"  # auto | redis | memory
     sanctions_table_path: str = ""  # full OFAC XML path; "" = fixture sample
 
+    # M10 watchlist: poll cadence in minutes (arq cron runs at these
+    # minute marks each hour: 15 -> :00, :15, :30, :45)
+    watch_poll_minutes: int = 15
+
 
 settings = Settings()

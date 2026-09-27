@@ -36,6 +36,16 @@ def _report(rec: models.ReportRecord) -> ReportRec:
         webhook_status=rec.webhook_status, created_at=rec.created_at)
 
 
+def _watch(rec: models.Watch) -> "WatchRec":
+    from .base import WatchRec
+    return WatchRec(
+        id=rec.id, address=rec.address, chain=rec.chain, label=rec.label,
+        case_id=rec.case_id, alert_url=rec.alert_url,
+        created_by=rec.created_by, status=rec.status,
+        seen_hashes=list(rec.seen_hashes or []),
+        last_checked_at=rec.last_checked_at, created_at=rec.created_at)
+
+
 class PostgresStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
@@ -125,3 +135,76 @@ class PostgresStore:
             if rec:
                 rec.webhook_status = status
                 await s.commit()
+
+    # ---------- M10: watchlist ----------
+
+    async def add_watch(self, watch: "WatchIn") -> "WatchRec":
+        from .base import WatchIn, WatchRec
+        async with self._sessions() as s:
+            rec = models.Watch(
+                address=watch.address, chain=watch.chain, label=watch.label,
+                case_id=watch.case_id, alert_url=watch.alert_url,
+                created_by=watch.created_by)
+            s.add(rec)
+            await s.commit()
+            await s.refresh(rec)
+            return _watch(rec)
+
+    async def get_watch(self, watch_id: uuid.UUID) -> "WatchRec | None":
+        async with self._sessions() as s:
+            rec = await s.get(models.Watch, watch_id)
+            return _watch(rec) if rec else None
+
+    async def list_watches(self, active_only: bool = True) -> list["WatchRec"]:
+        async with self._sessions() as s:
+            q = select(models.Watch).order_by(models.Watch.created_at)
+            if active_only:
+                q = q.where(models.Watch.status == "active")
+            res = await s.execute(q)
+            return [_watch(r) for r in res.scalars().all()]
+
+    async def set_watch(self, watch_id: uuid.UUID, status: str,
+                        seen_hashes: "list[str] | None" = None,
+                        last_checked_at: "datetime | None" = None) -> None:
+        async with self._sessions() as s:
+            rec = await s.get(models.Watch, watch_id)
+            if rec:
+                rec.status = status
+                if seen_hashes is not None:
+                    rec.seen_hashes = seen_hashes
+                if last_checked_at is not None:
+                    rec.last_checked_at = last_checked_at
+                await s.commit()
+
+    async def remove_watch(self, watch_id: uuid.UUID) -> None:
+        async with self._sessions() as s:
+            rec = await s.get(models.Watch, watch_id)
+            if rec:
+                await s.delete(rec)
+                await s.commit()
+
+    async def record_alert(self, alert: "AlertRec") -> "AlertRec":
+        async with self._sessions() as s:
+            rec = models.WatchAlert(
+                id=alert.id, watch_id=alert.watch_id, tx_hash=alert.tx_hash,
+                direction=alert.direction, counterparty=alert.counterparty,
+                value=alert.value, asset=alert.asset,
+                vasp_hit=alert.vasp_hit, delivered=alert.delivered)
+            s.add(rec)
+            await s.commit()
+            return alert
+
+    async def list_alerts(self, watch_id: uuid.UUID) -> list["AlertRec"]:
+        from .base import AlertRec
+        async with self._sessions() as s:
+            res = await s.execute(
+                select(models.WatchAlert).where(
+                    models.WatchAlert.watch_id == watch_id).order_by(
+                    models.WatchAlert.created_at))
+            return [
+                AlertRec(id=r.id, watch_id=r.watch_id, tx_hash=r.tx_hash,
+                         direction=r.direction, counterparty=r.counterparty,
+                         value=r.value, asset=r.asset, vasp_hit=r.vasp_hit,
+                         delivered=r.delivered, created_at=r.created_at)
+                for r in res.scalars().all()
+            ]
