@@ -40,7 +40,17 @@ def tron_hex_to_base58(hex_addr: str) -> str:
 
 
 def _to_base58(addr: Any) -> str:
+    """Normalize Tron address variants → base58check T… form.
+
+    TronGrid is inconsistent: raw_data contract values use 41… hex,
+    contract *events* use 0x… EVM-style hex (same 20 bytes, no 41 prefix).
+    """
     s = str(addr or "")
+    if s.startswith("0x") and len(s) == 42:
+        try:
+            return tron_hex_to_base58("41" + s[2:])
+        except ValueError:
+            return s
     if s.startswith("41") and len(s) == 42:
         try:
             return tron_hex_to_base58(s)

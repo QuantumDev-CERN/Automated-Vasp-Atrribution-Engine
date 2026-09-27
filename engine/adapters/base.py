@@ -5,6 +5,8 @@ classifier, traversal engine, and scoring layers only ever see this shape —
 they are fully chain-agnostic.
 """
 import asyncio
+import os
+import ssl
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -85,7 +87,18 @@ class ChainAdapter(ABC):
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         self.api_key = api_key
-        self._client = httpx.AsyncClient(timeout=timeout)
+        # NOTE: trust_env=False + explicit proxy. This environment's NO_PROXY
+        # contains "[::1]", which crashes httpx's proxy parsing, and direct
+        # egress is blocked — outbound must go via the egress proxy.
+        # The proxy does TLS interception; its CA is honored via SSL_CERT_FILE
+        # (certifi's bundle doesn't include it, so build our own context).
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        ssl_ctx = ssl.create_default_context(
+            cafile=os.environ.get("SSL_CERT_FILE") or None
+        )
+        self._client = httpx.AsyncClient(
+            timeout=timeout, trust_env=False, proxy=proxy, verify=ssl_ctx
+        )
         self._limiter = RateLimiter()
 
     @abstractmethod

@@ -1,6 +1,10 @@
 """EVM adapter — Ethereum, BNB Chain, Polygon via the Etherscan V2 unified API.
 
 One API key covers all EVM chains: api.etherscan.io/v2/api?chainid=<id>.
+
+NOTE: the free Etherscan tier only serves Ethereum mainnet ("Free API access
+is not supported for this chain" on BSC/Polygon). BSC and Polygon are covered
+by the Covalent adapter instead — see engine/adapters/covalent.py.
 """
 from typing import Any, Optional
 
