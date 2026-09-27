@@ -68,6 +68,10 @@ class MemoryGraphStore(GraphStore):
         rec = self._cases.get(case_id)
         return dict(rec["stats"]) if rec else None
 
+    async def case_meta(self, case_id: str) -> Optional[dict[str, Any]]:
+        rec = self._cases.get(case_id)
+        return dict(rec["meta"]) if rec else None
+
     async def address_tags(
         self, address: str, chain: str
     ) -> list[dict[str, str]]:

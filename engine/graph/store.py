@@ -127,6 +127,11 @@ class GraphStore(abc.ABC):
         """{addresses, transfers, transactions} for a saved case."""
 
     @abc.abstractmethod
+    async def case_meta(self, case_id: str) -> Optional[dict[str, Any]]:
+        """The meta dict passed to save_case_subgraph (subject, chain,
+        terminal, ...). None when the case was never saved."""
+
+    @abc.abstractmethod
     async def address_tags(self, address: str, chain: str) -> list[dict[str, str]]:
         """[{tag, source}] provenance labels on an address."""
 

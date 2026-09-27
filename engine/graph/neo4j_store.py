@@ -95,10 +95,11 @@ class Neo4jGraphStore(GraphStore):
                 "MERGE (c:Case {id: $cid}) "
                 "SET c.saved_at = $at, c.snapshot = $snap, "
                 "    c.addresses = $n_addr, c.transfers = $n_tx, "
-                "    c.transactions = $n_txs",
+                "    c.transactions = $n_txs, c.meta = $meta",
                 cid=case_id, at=_utcnow_iso(),
                 snap=json.dumps(snap), n_addr=stats["addresses"],
                 n_tx=stats["transfers"], n_txs=stats["transactions"],
+                meta=json.dumps(meta or {}),
             )
             if nodes:
                 s.run(
@@ -174,6 +175,16 @@ class Neo4jGraphStore(GraphStore):
             return None
         return {"addresses": rec["a"], "transfers": rec["t"] or 0,
                 "transactions": rec["x"] or 0}
+
+    async def case_meta(self, case_id: str) -> Optional[dict[str, Any]]:
+        with self._driver.session() as s:
+            rec = s.run(
+                "MATCH (c:Case {id: $cid}) RETURN c.meta AS meta",
+                cid=case_id,
+            ).single()
+        if rec is None or not rec["meta"]:
+            return None
+        return json.loads(rec["meta"])
 
     async def address_tags(
         self, address: str, chain: str
