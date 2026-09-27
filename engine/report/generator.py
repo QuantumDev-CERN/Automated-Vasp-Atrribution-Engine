@@ -34,6 +34,7 @@ class ReportInput:
     route: RouteRecommendation | None
     drafted_request: str = ""
     bridge_deposits: tuple = ()
+    swap_deposits: tuple = ()  # M18: custodial swap-service deposits
     cross_case: str = ""  # M9: syndicate brief (empty when no links)
     calibration_version: str = ""  # M13: e.g. "cal-3"; "" = uncalibrated
 
@@ -78,6 +79,11 @@ def _render_body(inp: ReportInput) -> str:
     bridges = "\n".join(
         f"  - {b.bridge} {b.direction} on {b.chain}: tx {b.tx_hash}"
         for b in inp.bridge_deposits) or "  (none)"
+    swaps = "\n".join(
+        f"  - {s.service} ({s.role}) on {s.chain}: "
+        f"{s.asset_symbol or '?'} {s.value} from {s.address[:12]}…, "
+        f"tx {s.tx_hash}"
+        for s in inp.swap_deposits) or "  (none)"
 
     return f"""\
 VASP ATTRIBUTION ENGINE — INVESTIGATION REPORT
@@ -119,7 +125,10 @@ Generated: {now} (UTC)
 {inp.drafted_request or '(no draft — terminal not resolved to a directory VASP)'}
 
 9. CROSS-CHAIN LEADS
+   Bridge deposits:
 {bridges}
+   Swap-service deposits:
+{swaps}
 
 10. CROSS-CASE LINKS
 {inp.cross_case or '(no other persisted case shares addresses with this case)'}

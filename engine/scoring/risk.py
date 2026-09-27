@@ -64,8 +64,8 @@ def score_risk(visited: list,
             "mixer-deposit", 40,
             "funds entered a mixer anonymity set — strongest single "
             "illicit-finance indicator the engine observes"))
-    if "swap-service" in kinds or (terminal_reason or "").startswith(
-            "unhandled-hop:swap-service"):
+    if "swap-service" in kinds or (terminal_reason or "") in (
+            "swap-service", "unhandled-hop:swap-service"):
         signals.append(RiskSignal(
             "swap-service", 25,
             "non-KYC swap service used: custodial swap with no on-chain "

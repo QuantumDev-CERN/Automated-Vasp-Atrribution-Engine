@@ -38,6 +38,7 @@ _TERMINAL_PRIORITY = [
     "sweep-consolidation",   # likely VASP hot wallet: most actionable
     "mixer-deposit",
     "bridge-lock",
+    "swap-service",        # named custodial service + recorded deposit
     "dead-end",
 ]
 
@@ -218,6 +219,7 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         attribution=attribution, risk=risk, terminal_vasp=terminal_vasp,
         route=route, drafted_request=drafted_request,
         bridge_deposits=tuple(result.bridge_deposits),
+        swap_deposits=tuple(result.swap_deposits),
         cross_case=cross_case_brief,
         calibration_version=attribution.calibration_version or ""))
 

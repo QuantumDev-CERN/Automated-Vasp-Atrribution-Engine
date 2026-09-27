@@ -38,6 +38,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m16.py"]),
     ("live: CoinJoin guard + co-input clustering smoke M17",
      [sys.executable, "scripts/smoke_m17.py"]),
+    ("live: swap-service registry re-verification smoke M18",
+     [sys.executable, "scripts/smoke_m18.py"]),
 ]
 
 

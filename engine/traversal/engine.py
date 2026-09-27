@@ -18,9 +18,9 @@ applying a typology-specific strategy per hop kind:
                      candidate withdrawals).
   mixer-deposit   -> STOP: funds entered the anonymity set. The depositor
                      is labeled "mixer-depositor".
-
-swap-service is still an unhandled-hop terminal: detection needs a curated
-address list (M5+).
+  swap-service    -> STOP: funds entered a custodial swap service. The
+                     deposit is recorded in result.swap_deposits as a
+                     cross-chain lead for M21 correlation work (M18).
 """
 from __future__ import annotations
 
@@ -31,7 +31,9 @@ from typing import Optional
 from ..classifier.hops import HopKind, classify_graph
 from ..graph.builder import TxGraph, _COINBASE
 
-_UNHANDLED_KINDS = {HopKind.SWAP_SERVICE}
+# Hop kinds with no traversal strategy yet. Empty since M18 (swap-service
+# was the last unhandled kind); kept as the mechanism for future kinds.
+_UNHANDLED_KINDS: set[HopKind] = set()
 
 
 @dataclass
@@ -55,7 +57,8 @@ class VisitedNode:
 class Terminal:
     address: str
     reason: str  # dead-end | sweep-consolidation | bridge-lock |
-    # mixer-deposit | max-hops | max-nodes | unhandled-hop:<kind>
+    # mixer-deposit | swap-service | max-hops | max-nodes |
+    # unhandled-hop:<kind>
 
 
 @dataclass
@@ -72,6 +75,24 @@ class BridgeDeposit:
 
 
 @dataclass
+class SwapDeposit:
+    """Value deposited into a swap service — cross-chain lead (M18).
+
+    The service swaps custodially and pays out elsewhere (any chain);
+    there is no on-chain linkage to follow, so traversal stops here and
+    M21 correlation work can pick the lead up from this record.
+    """
+
+    address: str       # depositor (the traced party)
+    tx_hash: str
+    chain: str
+    service: str       # "changenow" | "fixedfloat" | "simpleswap"
+    role: str          # registry role of the receiving address
+    asset_symbol: Optional[str]
+    value: str         # smallest units
+
+
+@dataclass
 class TraversalResult:
     start: str
     visited: list[VisitedNode] = field(default_factory=list)
@@ -80,6 +101,7 @@ class TraversalResult:
     # address -> parent address, tx_hash (path reconstruction for M6 reports)
     labels_applied: dict[str, list[str]] = field(default_factory=dict)
     bridge_deposits: list[BridgeDeposit] = field(default_factory=list)
+    swap_deposits: list[SwapDeposit] = field(default_factory=list)
 
 
 def _ensure_classified(graph: TxGraph) -> None:
@@ -149,6 +171,12 @@ def traverse(
                 result.labels_applied.setdefault(address, [])
                 if "mixer-depositor" not in result.labels_applied[address]:
                     result.labels_applied[address].append("mixer-depositor")
+                visited_hop.setdefault(tgt, hop + 1)
+                continue
+
+            if kind == HopKind.SWAP_SERVICE.value:
+                result.terminals.append(Terminal(tgt, "swap-service"))
+                _record_swap_deposit(graph, result, address, tx_hash, attrs)
                 visited_hop.setdefault(tgt, hop + 1)
                 continue
 
@@ -240,6 +268,38 @@ def _record_bridge_deposit(
             chain=tx.chain.value,
             bridge=bridge,
             direction=direction,
+            asset_symbol=symbol,
+            value=value,
+        )
+    )
+
+
+def _record_swap_deposit(
+    graph: TxGraph,
+    result: TraversalResult,
+    src: str,
+    tx_hash: str,
+    attrs: dict,
+) -> None:
+    """Record a swap-service deposit as a cross-chain lead for M21+."""
+    tx = graph.tx(tx_hash)
+    if tx is None:
+        return
+    service = attrs.get("hop_swap_service", "?")
+    role = attrs.get("hop_role", "?")
+    value, symbol = "0", tx.asset.symbol
+    # the leg into the service address carries the deposited amount
+    for p in tx.inputs + tx.outputs:
+        if p.address == src:
+            value = p.value
+            break
+    result.swap_deposits.append(
+        SwapDeposit(
+            address=src,
+            tx_hash=tx_hash,
+            chain=tx.chain.value,
+            service=service,
+            role=role,
             asset_symbol=symbol,
             value=value,
         )

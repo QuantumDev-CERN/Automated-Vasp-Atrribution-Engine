@@ -3,11 +3,12 @@
 Tags every transfer edge with one of the plan's hop kinds:
   direct-transfer | peel | sweep-candidate   (M3)
   dex-swap | bridge-lock | mixer-deposit     (M4)
-  swap-service                            (M5+ — enum only)
+  swap-service                            (M18)
 
 Order of checks: explicit DEX annotation first, then deterministic
-registry hits (bridge/mixer contracts), then the M3 heuristics. A
-registry hit or a decoded swap always wins over a heuristic guess.
+registry hits (bridge/mixer/swap-service contracts), then the M3
+heuristics. A registry hit or a decoded swap always wins over a
+heuristic guess.
 
 Heuristics are deliberately conservative and always carry a reason string.
 A wrong peel call sends the whole trace down the wrong branch, so when in
@@ -38,6 +39,7 @@ from ..adapters.base import CanonicalTx, Chain
 from ..graph.builder import TxGraph, _COINBASE
 from ..knowledge.bridges import bridge_for
 from ..knowledge.mixers import mixer_for
+from ..knowledge.swap_services import swap_service_for
 
 UTXO_CHAINS = {Chain.BITCOIN.value}
 
@@ -58,8 +60,7 @@ class HopKind(str, Enum):
     DEX_SWAP = "dex-swap"
     BRIDGE_LOCK = "bridge-lock"
     MIXER_DEPOSIT = "mixer-deposit"
-    # swap-service — defined for the 4.4 contract; detection needs a curated
-    # swap-service address list (M5+).
+    # swap-service — detected via the curated M18 hot-wallet registry.
     SWAP_SERVICE = "swap-service"
 
 
@@ -110,7 +111,7 @@ def classify_edge(
 def _classify_m4(
     tx: CanonicalTx, src: str, dst: str
 ) -> Optional[HopClassification]:
-    """Deterministic M4 kinds: decoded swaps and registry hits.
+    """Deterministic M4/M18 kinds: decoded swaps and registry hits.
 
     Runs before the M3 heuristics — an explicit decode or a known-contract
     counterparty always wins over a heuristic guess.
@@ -171,6 +172,24 @@ def _classify_m4(
                 "mixer": m.name,
                 "denomination": m.denomination,
                 "pool": m.pool,
+            },
+        )
+
+    # Swap service: funds sent INTO a known service address = entering
+    # a custodial swap. Like the mixer check, only the deposit direction
+    # classifies — the service's own onward movements are out of scope.
+    s = swap_service_for(tx.chain, dst)
+    if s is not None:
+        return HopClassification(
+            HopKind.SWAP_SERVICE,
+            s.confidence,
+            f"swap-service deposit: {s.name} ({s.role}; {s.label}) "
+            f"({dst[:12]}… on {tx.chain.value})",
+            {
+                "tx_hash": tx.tx_hash,
+                "swap_service": s.name,
+                "role": s.role,
+                "label": s.label,
             },
         )
     return None
@@ -303,10 +322,12 @@ def classify_graph(graph: TxGraph) -> dict[tuple[str, str, str], HopClassificati
         graph.g[src][dst][key]["peel_payment"] = bool(
             c.details.get("peel_payment")
         )
-        # M4 details ride on the edge so traversal/reporting can use them
-        # without re-deriving (bridge name/direction, mixer, dex in/out).
+        # M4/M18 details ride on the edge so traversal/reporting can use
+        # them without re-deriving (bridge name/direction, mixer, dex
+        # in/out, swap-service name/role).
         for k in ("bridge", "direction", "mixer", "denomination",
-                  "dex", "router", "in_symbol", "out_symbol"):
+                  "dex", "router", "in_symbol", "out_symbol",
+                  "swap_service", "role"):
             if c.details.get(k) is not None:
                 graph.g[src][dst][key][f"hop_{k}"] = c.details[k]
         out[(src, dst, key)] = c
