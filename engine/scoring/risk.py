@@ -39,17 +39,26 @@ def _level(total: int) -> str:
 
 def score_risk(visited: list,
                terminal_reason: str | None = None,
-               terminal_vasp_registered: bool | None = None) -> RiskScore:
+               terminal_vasp_registered: bool | None = None,
+               sanctions_hits: tuple[str, ...] = ()) -> RiskScore:
     """Score risk for one traced path.
 
     visited: TraversalResult.visited.
     terminal_reason: Terminal.reason string, if terminated.
     terminal_vasp_registered: FIU-IND status of the attributed terminal
         VASP, when the terminal was resolved to a directory entry.
+    sanctions_hits: addresses on the path that hit a sanctions list
+        (OFAC SDN via engine/intel). A direct hit is severe.
     """
     signals: list[RiskSignal] = []
     kinds = [getattr(n, "via_kind", "") for n in visited]
 
+    if sanctions_hits:
+        signals.append(RiskSignal(
+            "sanctions-list-hit", 50,
+            f"{len(sanctions_hits)} address(es) on the traced path appear "
+            "on the OFAC SDN list: "
+            + ", ".join(a[:12] + "…" for a in sanctions_hits[:3])))
     if "mixer-deposit" in kinds:
         signals.append(RiskSignal(
             "mixer-deposit", 40,

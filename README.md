@@ -11,13 +11,29 @@ docker compose up -d
 # API: http://localhost:8000/docs   Mock SAHYOG: http://localhost:8091
 ```
 
-Local dev without docker:
+Local dev without docker (API + worker fall back to in-memory store/queue):
 
 ```bash
 uv sync --extra dev
 uv run python integrations/sahyog_mock/submit_case.py <address> <chain>
 # or: .venv/bin/python scripts/smoke_adapters.py
 ```
+
+M7 async flow with docker (Redis queue + Postgres persistence + worker):
+
+```bash
+docker compose up -d          # postgres, redis, api, worker, sahyog-mock
+# submit a case ->  POST http://localhost:8000/cases
+# start a trace ->  POST http://localhost:8000/jobs/trace   (202 + job_id)
+# poll status   ->  GET  http://localhost:8000/jobs/{job_id}
+# read report   ->  GET  http://localhost:8000/reports/{report_id}
+# the worker pushes the finished attribution to the mock SAHYOG webhook
+# (see mock inbox: GET http://localhost:8091/sahyog/webhooks)
+```
+
+Env knobs (`.env`): `STORE_BACKEND=auto|postgres|memory`,
+`QUEUE_BACKEND=auto|redis|memory`, `SANCTIONS_TABLE_PATH` (full OFAC
+SDN Advanced XML; empty = vendored fixture sample).
 
 ## Layout
 

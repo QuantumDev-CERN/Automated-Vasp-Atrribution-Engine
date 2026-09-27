@@ -21,5 +21,10 @@ class Settings(BaseSettings):
     sahyog_mock_url: str = "http://localhost:8091"
     engine_webhook_secret: str = "dev-webhook-secret-change-me"
 
+    # M7 persistence + intel
+    store_backend: str = "auto"  # auto | postgres | memory
+    queue_backend: str = "auto"  # auto | redis | memory
+    sanctions_table_path: str = ""  # full OFAC XML path; "" = fixture sample
+
 
 settings = Settings()

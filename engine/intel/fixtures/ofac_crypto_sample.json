@@ -1,0 +1,38 @@
+{
+ "source": "OFAC SDN Advanced XML (sanctionslistservice.ofac.treas.gov)",
+ "extracted_at": "2026-09-27",
+ "entries": {
+  "0x252a8bd2319d8a555b872990601221b3a2053bce": {
+   "name": "MESRI Behzad",
+   "currency": "ETH"
+  },
+  "0x1CAb8177ACe78b1B6B1c393371F4f2dCAE40CbEB": {
+   "name": "MESRI Behzad",
+   "currency": "ETH"
+  },
+  "12aNKp2iDKuhEde2YfPdd4DFGenRUTKupL": {
+   "name": "MESRI Behzad",
+   "currency": "XBT"
+  },
+  "12QtD5BFwRsdNsAZY76UVE1xyCGNTojH9h": {
+   "name": "YAN Xiaobing",
+   "currency": "XBT"
+  },
+  "TNiq9AXBp9EjUqhDhrwrfvAA8U3GUQZH81": {
+   "name": "BANK MARKAZI JOMHOURI ISLAMI IRAN",
+   "currency": "TRX"
+  },
+  "TTiDLWE6fZK8okMJv6ijg42yrH6W2pjSr9": {
+   "name": "BANK MARKAZI JOMHOURI ISLAMI IRAN",
+   "currency": "TRX"
+  },
+  "TA3941uFAvmVibSkQ6fMJXxmaSNovX86mz": {
+   "name": "CHEIL CREDIT BANK",
+   "currency": "USDT"
+  },
+  "TBATDh41qMQ1yeVYecneEvhpfayYmkAQWS": {
+   "name": "CHEIL CREDIT BANK",
+   "currency": "USDT"
+  }
+ }
+}

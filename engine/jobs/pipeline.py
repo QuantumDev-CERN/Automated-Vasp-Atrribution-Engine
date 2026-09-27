@@ -1,0 +1,200 @@
+"""Async trace pipeline (M7).
+
+One traced wallet, end to end, as a pure async function so the arq
+worker, the API, and tests all run the same code:
+
+  adapters -> graph expansion -> classify -> traverse ->
+  confidence + risk -> VASP attribution -> report + certificate
+
+Bounded expansion (BFS over addresses, capped) keeps indexer load and
+cost predictable — the master reference's "don't re-resolve" caching
+note is future work, not silently skipped: repeated runs re-fetch.
+"""
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Callable, Optional
+
+from ..adapters.base import Chain, ChainAdapter
+from ..graph.builder import TxGraph, expand_address
+from ..intel.sanctions import SanctionsList
+from ..report import (
+    InvestigationReport, ReportInput, build_report,
+)
+from ..scoring import (
+    AttributionScore, RiskScore, score_attribution, score_risk,
+)
+from ..traversal.engine import (
+    TraversalConfig, TraversalResult, VisitedNode, traverse,
+)
+from ..vasp import (
+    CaseDetails, LegalInstrument, RouteRecommendation, VaspRecord,
+    find_vasp, recommend_and_draft,
+)
+
+# terminal preference when several exist: deepest hop wins, ties broken
+# by how actionable the terminal is for an investigator
+_TERMINAL_PRIORITY = [
+    "sweep-consolidation",   # likely VASP hot wallet: most actionable
+    "mixer-deposit",
+    "bridge-lock",
+    "dead-end",
+]
+
+
+def _terminal_rank(reason: str) -> int:
+    for i, prefix in enumerate(_TERMINAL_PRIORITY):
+        if reason.startswith(prefix):
+            return i
+    return len(_TERMINAL_PRIORITY)
+
+
+@dataclass
+class PipelineDeps:
+    """Injectable seams: tests pass fakes, the worker passes real ones."""
+    adapter_factory: Callable[[str], ChainAdapter]
+    sanctions: Optional[SanctionsList] = None
+    # terminal address -> VASP directory label (address->VASP clustering
+    # is future work; default resolves nothing rather than guessing)
+    vasp_resolver: Callable[[str], Optional[str]] = (
+        lambda addr: None)  # noqa: E731
+    max_expand_hops: int = 2
+    max_expand_addresses: int = 25
+    traversal_config: TraversalConfig = field(
+        default_factory=TraversalConfig)
+
+
+@dataclass(frozen=True)
+class TraceResult:
+    address: str
+    chain: str
+    path: tuple[VisitedNode, ...]       # subject -> primary terminal
+    terminal_reason: Optional[str]
+    terminal_address: Optional[str]
+    attribution: AttributionScore
+    risk: RiskScore
+    sanctions_hits: tuple[str, ...]
+    terminal_vasp: Optional[VaspRecord]
+    route: Optional[RouteRecommendation]
+    drafted_request: str
+    report: InvestigationReport
+
+
+def make_adapter(chain: str) -> ChainAdapter:
+    """Real adapter factory from settings (worker path)."""
+    from api.core.config import settings
+    from ..adapters.bitcoin import BitcoinAdapter
+    from ..adapters.covalent import CovalentAdapter
+    from ..adapters.evm import EvmAdapter
+    from ..adapters.solana import SolanaAdapter
+    from ..adapters.tron import TronAdapter
+
+    c = Chain(chain)
+    if c == Chain.ETHEREUM:
+        return EvmAdapter(chain=c, api_key=settings.etherscan_api_key)
+    if c in (Chain.BSC, Chain.POLYGON):
+        return CovalentAdapter(chain=c, api_key=settings.covalent_api_key)
+    if c == Chain.TRON:
+        return TronAdapter(api_key=settings.trongrid_api_key)
+    if c == Chain.BITCOIN:
+        return BitcoinAdapter()
+    if c == Chain.SOLANA:
+        return SolanaAdapter()
+    raise ValueError(f"unsupported chain: {chain}")
+
+
+async def _expand(graph: TxGraph, adapter: ChainAdapter, start: str,
+                  deps: PipelineDeps) -> None:
+    seen = {start}
+    queue: deque[tuple[str, int]] = deque([(start, 0)])
+    while queue and len(seen) < deps.max_expand_addresses:
+        address, depth = queue.popleft()
+        if depth > deps.max_expand_hops:
+            continue
+        try:
+            await expand_address(graph, adapter, address, limit=25)
+        except Exception:
+            continue  # one bad address must not kill the whole trace
+        if depth == deps.max_expand_hops:
+            continue
+        if address not in graph.g:
+            continue
+        for nbr in graph.g.successors(address):
+            if nbr not in seen and len(seen) < deps.max_expand_addresses:
+                seen.add(nbr)
+                queue.append((nbr, depth + 1))
+
+
+def _path_to(result: TraversalResult, terminal_addr: str) -> list[VisitedNode]:
+    if terminal_addr == result.start:
+        # start address not in graph: traverse() recorded a dead-end
+        # terminal without visiting anything
+        return [VisitedNode(address=result.start, hop=0)]
+    by_addr = {n.address: n for n in result.visited}
+    path = [by_addr[terminal_addr]]
+    while path[-1].address != result.start:
+        parent, _tx = result.came_from[path[-1].address]
+        path.append(by_addr[parent])
+    path.reverse()
+    return path
+
+
+def _pick_terminal(result: TraversalResult) -> Optional[str]:
+    if not result.terminals:
+        return None
+    by_addr = {n.address: n for n in result.visited}
+    ranked = sorted(
+        result.terminals,
+        key=lambda t: (-by_addr.get(t.address, VisitedNode(t.address, 0)).hop,
+                       _terminal_rank(t.reason)))
+    return ranked[0].address
+
+
+async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
+                             deps: PipelineDeps) -> TraceResult:
+    adapter = deps.adapter_factory(chain)
+    graph = TxGraph()
+    await _expand(graph, adapter, address, deps)
+    result = traverse(graph, address, deps.traversal_config)
+
+    terminal_address = _pick_terminal(result)
+    terminal_reason = next(
+        (t.reason for t in result.terminals
+         if t.address == terminal_address), None)
+    path = (_path_to(result, terminal_address)
+            if terminal_address else [VisitedNode(address=address, hop=0)])
+
+    sanctions_hits: list[str] = []
+    if deps.sanctions is not None:
+        for node in path:
+            if deps.sanctions.lookup(node.address):
+                sanctions_hits.append(node.address)
+
+    attribution = score_attribution(path, terminal_reason=terminal_reason)
+    risk = score_risk(path, terminal_reason=terminal_reason,
+                      sanctions_hits=tuple(sanctions_hits))
+
+    terminal_vasp = route = None
+    drafted_request = ""
+    if terminal_address:
+        label = deps.vasp_resolver(terminal_address)
+        if label:
+            vasp = find_vasp(label)
+            if vasp is not None:
+                out = recommend_and_draft(label, case)
+                if out:
+                    route, drafted_request = out
+                    terminal_vasp = vasp
+
+    report = build_report(ReportInput(
+        case=case, subject_wallet=address, chain=chain,
+        attribution=attribution, risk=risk, terminal_vasp=terminal_vasp,
+        route=route, drafted_request=drafted_request,
+        bridge_deposits=tuple(result.bridge_deposits)))
+
+    return TraceResult(
+        address=address, chain=chain, path=tuple(path),
+        terminal_reason=terminal_reason, terminal_address=terminal_address,
+        attribution=attribution, risk=risk,
+        sanctions_hits=tuple(sanctions_hits),
+        terminal_vasp=terminal_vasp, route=route,
+        drafted_request=drafted_request, report=report)

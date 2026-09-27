@@ -21,6 +21,10 @@ STAGES_UNIT = [
      [sys.executable, "scripts/smoke_m5.py"]),
     ("unit: confidence + risk + report smoke M6",
      [sys.executable, "scripts/smoke_m6.py"]),
+    ("unit: async jobs + webhook + sanctions smoke M7",
+     [sys.executable, "scripts/smoke_m7.py"]),
+    ("unit: M7 integration (SKIPs without docker services)",
+     [sys.executable, "scripts/smoke_m7_integration.py"]),
 ]
 STAGES_LIVE = [
     ("live: adapter smokes M1+M2", [sys.executable, "scripts/smoke_adapters.py"]),
