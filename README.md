@@ -14,9 +14,9 @@ docker compose up -d
 Local dev without docker:
 
 ```bash
-pip install -e ".[dev]"
-uvicorn api.main:app --reload
-python integrations/sahyog_mock/submit_case.py <address> <chain>
+uv sync --extra dev
+uv run python integrations/sahyog_mock/submit_case.py <address> <chain>
+# or: .venv/bin/python scripts/smoke_adapters.py
 ```
 
 ## Layout
