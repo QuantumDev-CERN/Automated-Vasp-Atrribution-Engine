@@ -57,6 +57,23 @@ def _hop_table(attribution: AttributionScore) -> str:
     return "\n".join(lines) if attribution.hops else "(no hops beyond subject)"
 
 
+# Display labels for terminal reasons in the human-readable report.
+# The machine vocabulary (terminal_reason) is unchanged; this only
+# affects the "Trail stopped" line.
+_TERMINAL_LABELS = {
+    # M19: the master plan's explicit wording — a recognized terminus,
+    # not a failed trace.
+    "otc-hawala-terminus":
+        "OTC/hawala terminus — no further on-chain trail expected",
+}
+
+
+def _terminal_label(reason: str | None) -> str:
+    if not reason:
+        return "not available"
+    return _TERMINAL_LABELS.get(reason, reason)
+
+
 def _render_body(inp: ReportInput) -> str:
     now = datetime.now(timezone.utc).isoformat()
     vasp_line = (f"{inp.terminal_vasp.name} "
@@ -104,7 +121,7 @@ Generated: {now} (UTC)
 {_hop_table(inp.attribution)}
 
 4. TERMINAL ASSESSMENT
-   Trail stopped: {inp.attribution.terminal_reason or 'not available'}
+   Trail stopped: {_terminal_label(inp.attribution.terminal_reason)}
 
 5. ATTRIBUTION
    Terminal VASP : {vasp_line}

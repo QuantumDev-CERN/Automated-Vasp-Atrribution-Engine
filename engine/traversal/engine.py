@@ -57,8 +57,8 @@ class VisitedNode:
 class Terminal:
     address: str
     reason: str  # dead-end | sweep-consolidation | bridge-lock |
-    # mixer-deposit | swap-service | max-hops | max-nodes |
-    # unhandled-hop:<kind>
+    # mixer-deposit | swap-service | otc-hawala-terminus | max-hops |
+    # max-nodes | unhandled-hop:<kind>
 
 
 @dataclass

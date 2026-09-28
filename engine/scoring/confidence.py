@@ -110,6 +110,11 @@ def score_attribution(visited: list,
     if terminal_reason == "bridge-lock":
         notes.append("value left the chain at a bridge: cross-chain "
                      "continuation needs correlation, not proof")
+    if terminal_reason == "otc-hawala-terminus":
+        notes.append("funds appear to have exited the on-chain world at an "
+                     "OTC/hawala collection wallet: no further on-chain "
+                     "trail is expected — a recognized terminus, not a "
+                     "failed trace")
     if terminal_reason == "max-hops":
         notes.append("trail truncated at max-hops: confidence understates "
                      "a longer path")

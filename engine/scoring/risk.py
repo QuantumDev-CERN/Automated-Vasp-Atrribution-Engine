@@ -64,6 +64,12 @@ def score_risk(visited: list,
             "mixer-deposit", 40,
             "funds entered a mixer anonymity set — strongest single "
             "illicit-finance indicator the engine observes"))
+    if (terminal_reason or "") == "otc-hawala-terminus":
+        signals.append(RiskSignal(
+            "otc-hawala-terminus", 30,
+            "funds settled off-chain at a suspected OTC/hawala collection "
+            "wallet — many disparate depositors, no onward on-chain "
+            "movement: classic cash-settlement laundering pattern"))
     if "swap-service" in kinds or (terminal_reason or "") in (
             "swap-service", "unhandled-hop:swap-service"):
         signals.append(RiskSignal(

@@ -18,6 +18,7 @@ from ..adapters.base import Chain, ChainAdapter
 from ..graph.builder import TxGraph, expand_address
 from ..graph.store import GraphStore
 from ..intel.sanctions import SanctionsList
+from ..intel.otc import OTC_TERMINUS_TAG, detect_otc_termini, registry_contains
 from ..report import (
     InvestigationReport, ReportInput, build_report,
 )
@@ -25,7 +26,7 @@ from ..scoring import (
     AttributionScore, RiskScore, score_attribution, score_risk,
 )
 from ..traversal.engine import (
-    TraversalConfig, TraversalResult, VisitedNode, traverse,
+    Terminal, TraversalConfig, TraversalResult, VisitedNode, traverse,
 )
 from ..vasp import (
     CaseDetails, LegalInstrument, RouteRecommendation, VaspRecord,
@@ -39,6 +40,7 @@ _TERMINAL_PRIORITY = [
     "mixer-deposit",
     "bridge-lock",
     "swap-service",        # named custodial service + recorded deposit
+    "otc-hawala-terminus",  # recognized terminus, not a failed trace
     "dead-end",
 ]
 
@@ -156,12 +158,61 @@ def _pick_terminal(result: TraversalResult) -> Optional[str]:
     return ranked[0].address
 
 
+async def _known_otc_terminus(deps: PipelineDeps, address: str,
+                            chain: str) -> bool:
+    """True when a prior case already confirmed this address as an
+    OTC/hawala terminus — the persistent registry short-circuit."""
+    if deps.graph_store is None or not deps.case_id:
+        return False
+    try:
+        entry = await registry_contains(deps.graph_store, address, chain)
+    except Exception:
+        return False  # registry unreadable: trace normally
+    return entry is not None
+
+
+async def _relabel_otc_termini(result: TraversalResult,
+                              adapter: ChainAdapter, chain: str) -> None:
+    """M19: dead-end terminals whose on-chain history shows the
+    collection pattern (many disparate depositors, no onward movement)
+    are relabeled as OTC/hawala termini — a recognized terminus, not a
+    failed trace. Only dead-ends are candidates: any other terminal
+    already has a better explanation."""
+    candidates = [t for t in result.terminals if t.reason == "dead-end"]
+    if not candidates:
+        return
+    try:
+        hits = await detect_otc_termini(
+            adapter, chain, [t.address for t in candidates])
+    except Exception:
+        return  # heuristic pass must never fail a trace
+    for t in candidates:
+        assessment = hits.get(t.address)
+        if assessment is not None:
+            t.reason = OTC_TERMINUS_TAG
+            print(f"[otc] {t.address}: {assessment.detail}")
+
+
 async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
                              deps: PipelineDeps) -> TraceResult:
     adapter = deps.adapter_factory(chain)
     graph = TxGraph()
-    await _expand(graph, adapter, address, deps)
-    result = traverse(graph, address, deps.traversal_config)
+    if await _known_otc_terminus(deps, address, chain):
+        # M19: repeat of a confirmed terminus — skip expansion entirely.
+        # The lone node keeps the graph-store block below working so the
+        # cross-case brief still links the prior case(s).
+        print(f"[otc] {address}: known OTC/hawala terminus — short-circuit")
+        graph.g.add_node(address, chains={chain}, first_seen=None,
+                         labels=set())
+        result = TraversalResult(
+            start=address,
+            visited=[VisitedNode(address=address, hop=0)],
+            terminals=[Terminal(address=address, reason=OTC_TERMINUS_TAG)],
+        )
+    else:
+        await _expand(graph, adapter, address, deps)
+        result = traverse(graph, address, deps.traversal_config)
+        await _relabel_otc_termini(result, adapter, chain)
 
     terminal_address = _pick_terminal(result)
     terminal_reason = next(

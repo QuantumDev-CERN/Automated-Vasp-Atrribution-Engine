@@ -40,6 +40,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m17.py"]),
     ("live: swap-service registry re-verification smoke M18",
      [sys.executable, "scripts/smoke_m18.py"]),
+    ("live: OTC/hawala terminus + registry smoke M19",
+     [sys.executable, "scripts/smoke_m19.py"]),
 ]
 
 
