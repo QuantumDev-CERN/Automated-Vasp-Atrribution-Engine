@@ -80,14 +80,10 @@ flowchart LR
     classDef out fill:#EFEBF7,stroke:#5E35B1,stroke-width:2px,color:#14182B
 
     A["suspect<br/>address"]:::ingest --> B["ingest<br/>adapters · cache"]:::ingest
-    B --> C["build<br/>graph · decode · classify"]:::build
-    C --> D["traverse<br/>heuristic BFS"]:::build
-    D --> E{"terminal?"}:::build
-    E --> F["resolve<br/>nearest VASP"]:::score
-    F --> G["score<br/>confidence × risk"]:::score
-    G --> H["threat intel<br/>2 live feeds"]:::score
-    H --> I["report<br/>13 sections + cert"]:::out
-    I --> J["route<br/>SAHYOG · MLAT · freeze"]:::out
+    B --> C["trace<br/>graph · classify · BFS"]:::build
+    C --> D["resolve<br/>nearest VASP"]:::score
+    D --> E["score<br/>confidence × risk"]:::score
+    E --> F["deliver<br/>report · route"]:::out
 ```
 
 Terminal handling detail:
@@ -150,9 +146,9 @@ Every stateful backend degrades gracefully: `STORE_BACKEND` / `QUEUE_BACKEND` / 
 
 ```mermaid
 sequenceDiagram
+    autonumber
     participant I as investigator
     participant A as API
-    participant Q as queue
     participant W as worker
     participant P as pipeline
     participant D as storage
@@ -161,14 +157,16 @@ sequenceDiagram
     I->>A: POST /cases
     A-->>I: 201 case_id
     I->>A: POST /jobs/trace
-    A->>Q: enqueue
+    A->>W: enqueue (Redis)
     A-->>I: 202 job_id
-    Q->>W: dequeue
-    W->>P: run trace
-    P->>D: persist trace + report
-    W->>S: signed webhook
-    I->>A: GET /jobs/{id}
-    A-->>I: done + report_id
+    par async trace
+        W->>P: run trace
+        P->>D: persist trace + report
+        W->>S: signed webhook
+    and status polling
+        I->>A: GET /jobs/{id}
+        A-->>I: done + report_id
+    end
     I->>A: GET /reports/{id}
     A-->>I: report + certificate
 ```
