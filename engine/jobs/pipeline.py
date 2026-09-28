@@ -18,6 +18,7 @@ from ..adapters.base import Chain, ChainAdapter
 from ..graph.builder import TxGraph, expand_address
 from ..graph.store import GraphStore
 from ..intel.sanctions import SanctionsList
+from ..intel.structuring import StructuringFinding, analyze_structuring
 from ..intel.mixer_correlation import (
     CAVEAT as MIXER_CORRELATION_CAVEAT,
     MixerWithdrawalCandidate,
@@ -113,6 +114,7 @@ class TraceResult:
     report: InvestigationReport
     cross_chain: tuple = ()  # M21: CrossChainContinuation records
     mixer_correlation: tuple = ()  # M22: MixerWithdrawalCandidate records
+    structuring_findings: tuple = ()  # M23: StructuringFinding records
 
 
 def make_adapter(chain: str) -> ChainAdapter:
@@ -268,8 +270,34 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         bridge_explicit_destination=bool(explicit_locks),
         bridge_destination_label=first_label,
         calibration=deps.calibration)
+
+    # M23: structuring / smurfing signals. The subject is analyzed from
+    # the already-ingested graph; the terminal gets one bounded history
+    # call, skipped for service-contract terminals (mixer pools, bridges
+    # and swap wallets are high-volume by design — not structuring).
+    # Best-effort throughout: analysis never fails the trace.
+    structuring_findings: list[StructuringFinding] = []
+    try:
+        structuring_findings.extend(
+            analyze_structuring(list(graph.txs.values()), address))
+        if (terminal_address
+                and terminal_address.lower() != address.lower()
+                and (terminal_reason or "") not in (
+                    "mixer-deposit", "coinjoin", "bridge-lock",
+                    "swap-service")):
+            try:
+                term_txs = await deps.adapter_factory(chain).get_transactions(
+                    terminal_address, limit=200)
+                structuring_findings.extend(
+                    analyze_structuring(term_txs, terminal_address))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[structuring] terminal history failed: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[structuring] analysis failed: {exc}")
+
     risk = score_risk(path, terminal_reason=terminal_reason,
-                      sanctions_hits=tuple(sanctions_hits))
+                      sanctions_hits=tuple(sanctions_hits),
+                      structuring_findings=tuple(structuring_findings))
 
     # M21: destination-chain continuation. For each lock with an
     # explicitly parsed, adapter-supported destination, run one bounded
@@ -372,4 +400,5 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         terminal_vasp=terminal_vasp, route=route,
         drafted_request=drafted_request, report=report,
         cross_chain=tuple(cross_chain),
-        mixer_correlation=tuple(mixer_correlation))
+        mixer_correlation=tuple(mixer_correlation),
+        structuring_findings=tuple(structuring_findings))

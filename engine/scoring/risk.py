@@ -40,7 +40,8 @@ def _level(total: int) -> str:
 def score_risk(visited: list,
                terminal_reason: str | None = None,
                terminal_vasp_registered: bool | None = None,
-               sanctions_hits: tuple[str, ...] = ()) -> RiskScore:
+               sanctions_hits: tuple[str, ...] = (),
+               structuring_findings: tuple = ()) -> RiskScore:
     """Score risk for one traced path.
 
     visited: TraversalResult.visited.
@@ -49,6 +50,8 @@ def score_risk(visited: list,
         VASP, when the terminal was resolved to a directory entry.
     sanctions_hits: addresses on the path that hit a sanctions list
         (OFAC SDN via engine/intel). A direct hit is severe.
+    structuring_findings: StructuringFinding records from
+        engine/intel/structuring.py (M23). Each becomes its own signal.
     """
     signals: list[RiskSignal] = []
     kinds = [getattr(n, "via_kind", "") for n in visited]
@@ -102,6 +105,30 @@ def score_risk(visited: list,
             "unregistered-terminal-vasp", 10,
             "trail terminates at a VASP with no FIU-IND registration: "
             "weaker legal reach, higher flight risk"))
+    for f in structuring_findings:
+        # M23: each finding is its own signal; the reason carries the
+        # raw counts so a reviewer can judge the shape at a glance.
+        addr = f.address[:12] + "…"
+        amt = f"{f.amount_min:g}–{f.amount_max:g} {f.asset_symbol}".strip()
+        if f.pattern == "fan-out-burst":
+            signals.append(RiskSignal(
+                "structuring-fan-out", f.points,
+                f"{f.count} similar-sized payouts ({amt}, CV {f.cv:g}) "
+                f"from {addr} within {f.window_hours:g}h — smurfing-style "
+                "distribution"))
+        elif f.pattern == "fan-in-burst":
+            signals.append(RiskSignal(
+                "structuring-fan-in", f.points,
+                f"{f.count} similar-sized deposits ({amt}, CV {f.cv:g}) "
+                f"into {addr} within {f.window_hours:g}h — smurfing-style "
+                "collection"))
+        elif f.pattern == "sub-threshold":
+            signals.append(RiskSignal(
+                "structuring-sub-threshold", f.points,
+                f"{f.count} transfers just below the round "
+                f"{f.round_number:g} {f.asset_symbol} mark "
+                f"({addr}, {f.window_hours:g}h window) — classic "
+                "threshold-evasion signature"))
 
     total = min(100, sum(s.points for s in signals))
     return RiskScore(total=total, level=_level(total),
