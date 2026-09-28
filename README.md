@@ -73,18 +73,39 @@ Everything the engine claims is backed by an on-chain or source-cited reason str
 ## How it works
 
 ```mermaid
-flowchart LR
-    A[Suspect address] --> B[Chain adapters]
-    B --> C[TxGraph builder]
-    C --> D[Hop classifier]
-    D --> E[Traversal engine]
-    E --> F{Terminal?}
-    F -->|mixer / CoinJoin / bridge / swap-service / OTC / dead-end| G[VASP resolver]
-    G --> H[Confidence × Risk scoring]
-    H --> I[Threat-intel matching]
-    I --> J[Report + SHA-256 certificate]
-    J --> K[Legal instrument routing]
-    K --> L[SAHYOG / MLAT / issuer freeze]
+flowchart TD
+    classDef ingest fill:#E9EDF7,stroke:#3E5CB8,stroke-width:2px,color:#14182B
+    classDef build fill:#F5F1E8,stroke:#A3804E,stroke-width:2px,color:#14182B
+    classDef intel fill:#FCEBE9,stroke:#C23B2A,stroke-width:2px,color:#14182B
+    classDef score fill:#E9F3EC,stroke:#2E7D32,stroke-width:2px,color:#14182B
+    classDef out fill:#EFEBF7,stroke:#5E35B1,stroke-width:2px,color:#14182B
+
+    A["Suspect address + chain"]:::ingest --> B["Chain adapters<br/>bitcoin · evm · tron · solana"]:::ingest
+    B --> C["Indexer cache<br/>Redis / memory / none · TTL + LRU"]:::ingest
+    C --> D["TxGraph builder<br/>networkx MultiDiGraph<br/>UTXO bipartite expansion"]:::build
+    D --> E["Calldata decoders<br/>Uniswap V2/V3 · PancakeSwap<br/>Wormhole · CREATE2 / EIP-1167"]:::build
+    E --> F["Hop classifier<br/>peel · sweep · direct<br/>+ script-type match"]:::build
+    F --> G["Traversal engine<br/>heuristic BFS"]:::build
+    G --> H{"Terminal type?"}:::build
+    H -->|mixer deposit| T1["Mixer correlation<br/>timing decay · anon-set · gas link<br/>probabilistic leads only"]:::intel
+    H -->|bridge lock| T2["Destination parsing<br/>calldata → dest chain + recipient<br/>bounded continuation trace"]:::intel
+    H -->|swap-service| T3["Swap-service registry<br/>12 on-chain-verified hot wallets"]:::intel
+    H -->|CoinJoin| T4["CoinJoin analysis<br/>collaborative anonymity set<br/>no deterministic unmixing"]:::intel
+    H -->|OTC pattern| T5["OTC / hawala detection<br/>collection-pattern heuristic"]:::intel
+    H -->|dead-end| T6["Dead-end terminal"]:::intel
+    T1 --> V["VASP resolver<br/>nearest legally-addressable VASP<br/>32-record cited directory"]:::score
+    T2 --> V
+    T3 --> V
+    T4 --> V
+    T5 --> V
+    T6 --> V
+    V --> S1["Confidence<br/>product over hops<br/>classifier × kind discount"]:::score
+    V --> S2["Risk 0–100<br/>additive signals<br/>threat hits · structuring · terminals"]:::score
+    S1 --> TI["Threat-intel matching<br/>ScamSniffer 4,599 · Ransomwhere 11,186"]:::intel
+    S2 --> TI
+    TI --> R["13-section evidentiary report<br/>SHA-256 certificate · BSA Section 63"]:::out
+    R --> L["Legal routing<br/>SAHYOG/PMLA · Egmont to MLAT<br/>issuer-freeze fast-track"]:::out
+    L --> W["Delivery<br/>signed webhooks to portal<br/>watch-alert consumers"]:::out
 ```
 
 ### Pipeline stages
@@ -99,7 +120,7 @@ flowchart LR
 | **Correlate** | `engine/intel/` | mixer withdrawal ranking (timing decay + anonymity-set context + gas-funding self-link), structuring shapes, OTC collection patterns, threat-feed hits |
 | **Resolve** | `engine/vasp/` | terminal → nearest legally-addressable VASP from the curated directory |
 | **Score** | `engine/scoring/` | confidence product-over-hops; additive risk signals |
-| **Report** | `engine/report/` | 13-section report + SHA-256 evidentiary certificate (BSA §63) |
+| **Report** | `engine/report/` | 13-section report + SHA-256 evidentiary certificate (BSA Section 63) |
 | **Deliver** | `engine/delivery/` | signed webhooks to SAHYOG (mock until real API access) and watch-alert consumers |
 
 ---
@@ -108,42 +129,79 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph Client
-        UI[Investigator console]
+    classDef client fill:#FFFFFF,stroke:#14182B,stroke-width:2px,color:#14182B
+    classDef api fill:#E9EDF7,stroke:#3E5CB8,stroke-width:2px,color:#14182B
+    classDef eng fill:#F5F1E8,stroke:#A3804E,stroke-width:2px,color:#14182B
+    classDef infra fill:#EDEFF2,stroke:#5B6270,stroke-width:2px,color:#14182B
+    classDef ext fill:#FCEBE9,stroke:#C23B2A,stroke-width:2px,color:#14182B
+
+    subgraph CLIENT["Clients"]
+        UI["Investigator console"]:::client
     end
-    subgraph API["FastAPI service"]
-        R[33 routes<br/>cases · jobs · graph · reports<br/>watchlist · admin · feedback]
+    subgraph SVC["FastAPI service"]
+        R["33 routes<br/>cases · jobs · graph · reports<br/>watchlist · admin · feedback"]:::api
     end
-    subgraph Engine
-        P[Trace pipeline]
-        S[(In-memory store)]
+    subgraph ENG["Trace engine"]
+        P["Trace pipeline<br/>adapters → graph → classify<br/>traverse → score → report"]:::eng
+        M["In-memory store<br/>zero-infra fallback"]:::eng
     end
-    subgraph Workers
-        W[arq workers<br/>async trace jobs]
+    subgraph WORK["Background workers"]
+        W["arq workers<br/>async trace jobs"]:::eng
     end
-    subgraph Infra
-        PG[(Postgres<br/>cases / traces / reports)]
-        RD[(Redis<br/>queue + indexer cache)]
-        N4[(Neo4j<br/>cross-case knowledge graph)]
+    subgraph DATA["Stateful backends"]
+        PG[("Postgres<br/>cases · traces · reports")]:::infra
+        RD[("Redis<br/>job queue + indexer cache")]:::infra
+        N4[("Neo4j<br/>cross-case knowledge graph")]:::infra
     end
-    subgraph External
-        IDX[Chain indexers<br/>mempool.space · Etherscan V2<br/>TronGrid · Solana RPC · Covalent]
-        FEED[Threat feeds<br/>ScamSniffer · Ransomwhere]
-        SAH[SAHYOG portal<br/>mock until live]
+    subgraph EXT["External systems"]
+        IDX["Chain indexers<br/>mempool.space · Etherscan V2<br/>TronGrid · Solana RPC · Covalent"]:::ext
+        FEED["Threat feeds<br/>ScamSniffer · Ransomwhere"]:::ext
+        SAH["SAHYOG portal<br/>mock until live access"]:::ext
     end
-    UI --> R --> P
-    P <--> S
-    R --> W
-    W --> P
-    P --> PG
-    P <--> RD
-    P <--> N4
-    P --> IDX
-    P --> FEED
-    W --> SAH
+
+    UI -->|"REST"| R
+    R -->|"enqueue job"| W
+    R -->|"sync reads"| P
+    P <-->|"auto-fallback"| M
+    W -->|"run pipeline"| P
+    P -->|"persist"| PG
+    P <-->|"cache + queue"| RD
+    P <-->|"link + tag"| N4
+    P -->|"HTTPS"| IDX
+    P -->|"validated snapshots"| FEED
+    W -->|"HMAC-signed webhook"| SAH
 ```
 
 Every stateful backend degrades gracefully: `STORE_BACKEND` / `QUEUE_BACKEND` / `INDEXER_CACHE_BACKEND` all support `auto` (try durable, sticky-fallback to in-memory) so the engine runs with zero infrastructure for development.
+
+### Async trace lifecycle
+
+```mermaid
+sequenceDiagram
+    participant I as Investigator
+    participant A as FastAPI
+    participant Q as Redis queue
+    participant W as arq worker
+    participant P as Trace pipeline
+    participant D as Postgres + Neo4j
+    participant S as SAHYOG (mock)
+
+    I->>A: POST /cases {address, chain}
+    A-->>I: 201 {case_id}
+    I->>A: POST /jobs/trace {case_id, address}
+    A->>Q: enqueue trace job
+    A-->>I: 202 {job_id}
+    Q->>W: dequeue
+    W->>P: run trace(case_id)
+    P->>P: ingest, graph, classify, traverse, resolve, score
+    P->>D: persist trace + report
+    P->>D: tag knowledge graph
+    W->>S: signed webhook {attribution}
+    I->>A: GET /jobs/{job_id}
+    A-->>I: {status: done, report_id}
+    I->>A: GET /reports/{report_id}
+    A-->>I: 13-section report + certificate
+```
 
 ---
 
