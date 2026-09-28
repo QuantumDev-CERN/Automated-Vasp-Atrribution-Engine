@@ -178,10 +178,19 @@ class PostgresStore:
     async def get_report_by_case(
         self, case_id: uuid.UUID,
     ) -> ReportRec | None:
-        job = await self.get_latest_job(case_id)
-        if job is None:
-            return None
-        return await self.get_report_by_job(job.id)
+        # Query the latest report directly by case_id. The old
+        # implementation looked up the latest job then that job's report,
+        # which broke when a newer job existed without a report (e.g. a
+        # timed-out trace attempt after a successful one).
+        async with self._sessions() as s:
+            from sqlalchemy import select
+            from .models import ReportRecord
+            q = (select(ReportRecord)
+                 .where(ReportRecord.case_id == case_id)
+                 .order_by(ReportRecord.generated_at.desc())
+                 .limit(1))
+            rec = (await s.execute(q)).scalar_one_or_none()
+            return _report(rec) if rec else None
 
     async def create_job(self, case_id: uuid.UUID, address: str,
                          chain: str) -> JobRec:

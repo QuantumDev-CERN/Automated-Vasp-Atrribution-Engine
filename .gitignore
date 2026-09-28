@@ -22,3 +22,4 @@ data/threat_feeds/
 
 AUTOMATED-VASP-ATTRIBUTION-MASTER-REFERENCE.md
 vasp-m0-m13-implementation-summary.pdf
+data/graph_store.json

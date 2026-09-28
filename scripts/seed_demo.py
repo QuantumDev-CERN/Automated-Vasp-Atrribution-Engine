@@ -19,10 +19,10 @@ Case subjects (all on-chain activity verified before seeding):
 - EVAL/2026/0015-0016: real Tornado Cash 1 ETH pool depositors
 - EVAL/2026/0017-0046: 30 more ScamSniffer ETH addresses (deterministic
   sample seed 20260929 of the 2026-09-28 snapshot; activity verified
-  on-chain 2026-09-29 via the engine's own EVM adapter)
+  on-chain 2026-09-28 via the engine's own EVM adapter)
 - EVAL/2026/0047-0066: 20 more Ransomwhere BTC addresses, stratified
   across ransomware families (activity verified via mempool.space
-  2026-09-29)
+  2026-09-28)
 
 Watch alert catch-up (documented, not hidden): the first tick learns
 its baseline from the 5 most recent transactions; the second tick runs
@@ -123,223 +123,223 @@ CASES: list[dict] = [
     dict(eval_id="EVAL/2026/0017", address="0xe10da2c1edac5e2061b19b3504a7608142d96f59",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0018", address="0x0000098a312e1244f313f83cac319603a97f4582",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0019", address="0x08a66c51e2d16a44c91592c8d5e62ef94bcbf4aa",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0020", address="0xe0ce8577cbe16e11cac4158ec62b9f8a561c3616",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0021", address="0xf02c21668962abba296040c276987ea7fa4d4cc4",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0022", address="0xc9984286393f8b564473f682f34bde4898049d31",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0023", address="0x8e3e1b2ad7a5b5d7e8d72942a4a239ef6ac6abff",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0024", address="0x71555fd3c87db56738b25f497302fd33f636cf04",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0025", address="0x3253e71aef7b8e181062a4b07c57fa85bf12bdd2",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0026", address="0xc1e3224ecec7e216ca2acfba621e523743168c72",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0027", address="0xf61977431642b6ad4903e7f57a5110aa1f925183",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0028", address="0x59fed4cbd3434256cf0c23e4361035704e6f5579",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0029", address="0x21d81ae7c7ccdd9899dbd898231fbda9c036c7c5",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0030", address="0xc63c55b472fe15b7f580097086753a380e40cdd8",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0031", address="0x36f0ee52adb16837cde15ea4f7c8b38e7e0f6841",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0032", address="0xf2388f790ac052888eee91d8463b257f0b9d2b42",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0033", address="0x915c2aa279a49e9c98917b74d8a42af66eafe8f2",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0034", address="0x85b67c9619da96a412e63a561445ee608c284148",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0035", address="0xc3e6157dfe1bfc2bd93cf74cde85b0ca7ba77aa8",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0036", address="0xa7b1ae65d2f743870fb96950b3bdf0940f2d9b1a",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0037", address="0x66dc1f8dd762c182a9bd9dce47b181c9c414e656",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0038", address="0x60d12d2f360de2bbc404164933005156dbc590fc",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0039", address="0xadf363c6090f911f20c1b59a99928bcb5eed0e5c",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0040", address="0x37a51fd428bc37d5a3be6c43b32446c602c1983b",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0041", address="0xd2613e6e8818967349b8eef41584aaa908a450cb",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0042", address="0xa0db38548d69879e844020742bfd888c28dcd17f",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0043", address="0x9b56aaa0937047a211ad41b9ce5a4c0d731a442e",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0044", address="0x4258ebe8ca35de27d7f60a2512015190b8ad70e7",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0045", address="0xb611e5b4a1c567957d5589cd896b078bab203942",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0046", address="0x5e7e56d8a1c57aa910d59a81b5fbe3c362b81c92",
          chain="ethereum", label="ScamSniffer phishing/scam address",
          source="ScamSniffer scam-database blacklist/all.json snapshot "
-                "2026-09-28 (on-chain activity verified 2026-09-29)"),
+                "2026-09-28 (on-chain activity verified 2026-09-28)"),
     dict(eval_id="EVAL/2026/0047", address="1Lud76Q98VRHCUiyK7XUs7AgFofrqXeP78",
          chain="bitcoin", label="Ransomwhere: 7ev3n ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0048", address="1HyasSC2VifTZo7YkUNn33udnWXw3Ffq7T",
          chain="bitcoin", label="Ransomwhere: AES-NI ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0049", address="377CY1m8W2qbQQX5HHjziimdh2faGjDeLv",
          chain="bitcoin", label="Ransomwhere: APT ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0050", address="bc1qhzd63mz9mfucak7yzfn65p6rcsgztnsqr3dak8",
          chain="bitcoin", label="Ransomwhere: Akira ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0051", address="1DUBrMcH9T13oFSa59jxtFDM5eWTP8v2yc",
          chain="bitcoin", label="Ransomwhere: Ako ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0052", address="bc1qy2fx4vdnka3z264vdlg4qu88exvx8hlj5vvju5",
          chain="bitcoin", label="Ransomwhere: AlbDecryptor ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0053", address="bc1q65f238kv6gc235smuzcehshxcqljn2g7l5sz7j",
          chain="bitcoin", label="Ransomwhere: Avaddon ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0054", address="1MiGyooKN32XiiQ37x6EJwbbfw6mJ7d27G",
          chain="bitcoin", label="Ransomwhere: AvosLocker ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0055", address="bc1qnurh904jcnxm0amfg2cy3406k4ed2vd2x67s8p",
          chain="bitcoin", label="Ransomwhere: Bagli ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0056", address="17rJmFiKyYbNZmt9xiz8yTScX1QvWpt7pz",
          chain="bitcoin", label="Ransomwhere: Bitpaymer / DoppelPaymer ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0057", address="13rhLTYUKo9ijrR8vinojZqoZTpTe1fm8c",
          chain="bitcoin", label="Ransomwhere: Black Basta ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0058", address="1Lf8ZzcEhhRiXpk6YNQFpCJcUisiXb34FT",
          chain="bitcoin", label="Ransomwhere: Black Kingdom ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0059", address="1JjKYDsYrJGPCzLGGmFL8nM7AvUncd2wYW",
          chain="bitcoin", label="Ransomwhere: Black Mamba ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0060", address="19S7k3zHphKiYr85T25FnqdxizHcgmjoj1",
          chain="bitcoin", label="Ransomwhere: Black Ruby ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0061", address="14Q5xgBHAkWxDVrnHautcm4PPGmy5cfw6b",
          chain="bitcoin", label="Ransomwhere: BlackCat ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0062", address="bc1q2855268hg3lm34qwk5jvnnjm762ef8rkdvyjez",
          chain="bitcoin", label="Ransomwhere: BlackMatter ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0063", address="3BaS629MFciJ5cJKHSg4A5vncVok5Hxw7H",
          chain="bitcoin", label="Ransomwhere: BlackRouter ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0064", address="bc1q0c03s0c80uuxjq4jcyfhs4k8w5wu6ca9xhxsw9",
          chain="bitcoin", label="Ransomwhere: BlackSuit ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0065", address="1MfVk1utxgvGjMFV3K3CzXsDRDZznj5tey",
          chain="bitcoin", label="Ransomwhere: Bucbi ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
     dict(eval_id="EVAL/2026/0066", address="1Eh4f3p2fQVjfyHAyJ2rCqjUgDxPgjJE5q",
          chain="bitcoin", label="Ransomwhere: ChupaCabra ransomware payment",
          source="Ransomwhere api.ransomwhe.re/export snapshot 2026-09-28 "
                 "(crowdsourced; on-chain activity verified via mempool.space "
-                "2026-09-29)"),
+                "2026-09-28)"),
 ]
 
 # --------------------------------------------------------------- watches
@@ -458,9 +458,11 @@ async def _seed_case(ctx, spec, sem):
             job = await store.create_job(case.id, spec["address"],
                                          spec["chain"])
             try:
-                out = await trace_wallet(
+                # One slow/hung trace must not stall the whole bulk run.
+                out = await asyncio.wait_for(trace_wallet(
                     ctx, job_id=str(job.id), case_id=str(case.id),
-                    address=spec["address"], chain=spec["chain"])
+                    address=spec["address"], chain=spec["chain"]),
+                    timeout=600)
                 report = await store.get_report(UUID(out["report_id"]))
                 print(f"[{spec['eval_id']}] traced: risk={report.risk_score} "
                       f"({report.risk_level}) conf={report.confidence} "
@@ -471,6 +473,14 @@ async def _seed_case(ctx, spec, sem):
                 last_err = f"{type(exc).__name__}: {exc}"
                 print(f"[{spec['eval_id']}] attempt {attempt} failed: "
                       f"{last_err}", flush=True)
+                # Ensure the job is marked failed (CancelledError from
+                # wait_for timeout bypasses the worker's except Exception).
+                try:
+                    await store.set_job(
+                        job.id, "failed",
+                        error=f"seed timeout/cancelled: {last_err}")
+                except Exception:
+                    pass
                 await asyncio.sleep(10 * attempt)
         print(f"[{spec['eval_id']}] FAILED after {MAX_ATTEMPTS} attempts: "
               f"{last_err}", flush=True)
@@ -503,9 +513,11 @@ async def _seed_watches(ctx, case_ids: dict[str, UUID]):
             created_by="evaluation-seed"))
         try:
             # tick 1 — baseline from the N most recent txs only.
+            # Bounded: one slow indexer must not stall the whole seed.
             watch = await store.get_watch(rec.id)
-            base = await check_watch(watch, make_adapter,
-                                     limit=BASELINE_LIMIT)
+            base = await asyncio.wait_for(
+                check_watch(watch, make_adapter, limit=BASELINE_LIMIT),
+                timeout=120)
             await store.set_watch(
                 rec.id, watch.status, seen_hashes=base.seen_hashes,
                 last_checked_at=base.checked_at)
@@ -514,11 +526,14 @@ async def _seed_watches(ctx, case_ids: dict[str, UUID]):
                 txs_seen=base.txs_examined, baseline=True))
             # tick 2 — normal window: the address's real recent history
             # beyond the baseline surfaces as catch-up alerts.
+            # Bounded: one slow indexer must not stall the whole seed.
             watch = await store.get_watch(rec.id)
-            out = await process_watch(
-                store, watch, adapter_factory=make_adapter,
-                alert_url=alert_url,
-                secret=settings.engine_webhook_secret)
+            out = await asyncio.wait_for(
+                process_watch(
+                    store, watch, adapter_factory=make_adapter,
+                    alert_url=alert_url,
+                    secret=settings.engine_webhook_secret),
+                timeout=120)
             n_events = len(out["events"])
             print(f"[watch] created + 2 ticks: {spec['label']} "
                   f"(catch-up alerts: {n_events})", flush=True)

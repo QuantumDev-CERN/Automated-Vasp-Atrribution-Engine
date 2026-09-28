@@ -77,8 +77,14 @@ async def receive_attribution(request: Request) -> JSONResponse:
         return JSONResponse({"error": "bad signature"}, status_code=401)
 
     idem = request.headers.get("X-Idempotency-Key")
+    # M28 fix: deterministic ack_ref from the idempotency key so
+    # repeated delivery returns the same acknowledgement reference.
+    import hashlib
+    ack_ref = ("MOCK-" + hashlib.sha256(
+        (idem or "").encode()).hexdigest()[:12].upper())
     if idem and idem in _seen_idempotency_keys:
         return JSONResponse({"ack": True, "duplicate": True,
+                             "ack_ref": ack_ref,
                              "webhooks_received": len(_webhooks)})
     if idem:
         _seen_idempotency_keys.add(idem)
@@ -95,7 +101,8 @@ async def receive_attribution(request: Request) -> JSONResponse:
         _cases[case_id]["status"] = payload.get("status", "attributed")
     # M28: the mock issues a real acknowledgement reference, like the
     # real portal would — the engine persists it on the filing record.
-    ack_ref = f"MOCK-{uuid4().hex[:12].upper()}"
+    # (ack_ref is derived deterministically from the idempotency key
+    # above, so re-delivery returns the same reference.)
     return JSONResponse({"ack": True, "ack_ref": ack_ref,
                          "webhooks_received": len(_webhooks)})
 

@@ -21,12 +21,25 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import logging
     from engine.graph import get_graph_store
+    from engine.graph.memory_store import MemoryGraphStore
     from engine.jobs import init_queue
     from engine.store import init_store
+    log = logging.getLogger("vasp.api")
     app.state.store = await init_store(settings)
     app.state.queue = await init_queue(settings)
     app.state.graph_store = get_graph_store()  # M8: Neo4j or memory
+    # File-backed memory graph: reload seed/rebuild data if present.
+    if isinstance(app.state.graph_store, MemoryGraphStore):
+        loaded = MemoryGraphStore.load_from_file(
+            "data/graph_store.json")
+        if loaded is not None:
+            app.state.graph_store = loaded
+            log.info("[graph] loaded %d cases from data/graph_store.json",
+                     len(loaded._cases))
+        else:
+            log.info("[graph] no data/graph_store.json found")
     yield
     await app.state.queue.close()
     await app.state.graph_store.close()

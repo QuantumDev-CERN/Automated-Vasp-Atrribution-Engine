@@ -7,6 +7,7 @@ Run via docker-compose (`worker` service): arq worker.WorkerSettings
 Run locally (needs redis + postgres, or falls back per settings):
     uv run arq worker.WorkerSettings
 """
+import asyncio
 import logging
 from uuid import UUID
 
@@ -155,6 +156,14 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
         log.info("job %s done: report %s webhook_ok=%s",
                  job_id, report.id, delivery.ok)
         return {"report_id": str(report.id), "webhook_ok": delivery.ok}
+    except asyncio.CancelledError:
+        # Timeout or external cancellation — mark failed, don't leave
+        # a stale "running" job. Re-raise so the caller sees cancellation.
+        await store.set_job(jid, "failed",
+                            error="CancelledError: trace timed out or "
+                                  "was cancelled")
+        log.warning("job %s cancelled", job_id)
+        raise
     except Exception as exc:
         await store.set_job(jid, "failed",
                             error=f"{type(exc).__name__}: {exc}")

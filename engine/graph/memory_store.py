@@ -99,3 +99,52 @@ class MemoryGraphStore(GraphStore):
     @property
     def backend(self) -> str:
         return "memory"
+
+    # ------------------------------------------------------------------
+    # File persistence — lets the API reload graph data that a seed or
+    # rebuild script persisted earlier. The snapshots are already
+    # JSON-safe; only the tuple keys and sets need conversion.
+    # ------------------------------------------------------------------
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cases": self._cases,
+            "tags": [
+                {"chain": chain, "address": address, "entries": entries}
+                for (chain, address), entries in self._tags.items()
+            ],
+            "addr_cases": [
+                {"chain": chain, "address": address,
+                 "case_ids": sorted(case_ids)}
+                for (chain, address), case_ids in self._addr_cases.items()
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MemoryGraphStore":
+        store = cls()
+        store._cases = data.get("cases", {})
+        for item in data.get("tags", []):
+            store._tags[(item["chain"], item["address"])] = item["entries"]
+        for item in data.get("addr_cases", []):
+            store._addr_cases[(item["chain"], item["address"])] = set(
+                item["case_ids"])
+        return store
+
+    def save_to_file(self, path: str) -> None:
+        import json
+        from pathlib import Path
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(self.to_dict()))
+
+    @classmethod
+    def load_from_file(cls, path: str) -> "MemoryGraphStore | None":
+        import json
+        from pathlib import Path
+        p = Path(path)
+        if not p.exists():
+            return None
+        try:
+            return cls.from_dict(json.loads(p.read_text()))
+        except Exception:
+            return None
