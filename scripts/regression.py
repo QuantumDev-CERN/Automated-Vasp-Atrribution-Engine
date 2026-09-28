@@ -42,6 +42,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m18.py"]),
     ("live: OTC/hawala terminus + registry smoke M19",
      [sys.executable, "scripts/smoke_m19.py"]),
+    ("live: CoinJoin terminal + mixer path-fix smoke M20",
+     [sys.executable, "scripts/smoke_m20.py"]),
 ]
 
 

@@ -38,6 +38,7 @@ from ..vasp import (
 _TERMINAL_PRIORITY = [
     "sweep-consolidation",   # likely VASP hot wallet: most actionable
     "mixer-deposit",
+    "coinjoin",            # anonymity set: like mixer-deposit, probabilistic
     "bridge-lock",
     "swap-service",        # named custodial service + recorded deposit
     "otc-hawala-terminus",  # recognized terminus, not a failed trace

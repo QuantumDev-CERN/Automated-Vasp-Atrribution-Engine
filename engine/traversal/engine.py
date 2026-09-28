@@ -36,6 +36,40 @@ from ..graph.builder import TxGraph, _COINBASE
 _UNHANDLED_KINDS: set[HopKind] = set()
 
 
+def _record_terminal_hop(
+    result: TraversalResult,
+    visited_hop: dict[str, int],
+    address: str,
+    tgt: str,
+    hop: int,
+    tx_hash: str,
+    kind: str,
+    attrs: dict,
+) -> None:
+    """Record a stop-terminal's target as a visited node (not queued).
+
+    M20 fix: stop-terminals (sweep/mixer/bridge/swap/coinjoin) previously
+    left their target out of ``result.visited``, which crashed the
+    pipeline's path reconstruction (``KeyError``) for every non-dead-end
+    terminal — latent since M4 because no pipeline test ever exercised
+    one. The node WAS reached via the hop; it is visited, we just don't
+    walk past it.
+    """
+    if tgt in visited_hop:
+        return
+    visited_hop[tgt] = hop + 1
+    result.came_from.setdefault(tgt, (address, tx_hash))
+    result.visited.append(
+        VisitedNode(
+            address=tgt,
+            hop=hop + 1,
+            via_tx=tx_hash,
+            via_kind=kind,
+            via_confidence=attrs.get("hop_confidence"),
+        )
+    )
+
+
 @dataclass
 class TraversalConfig:
     max_hops: int = 10
@@ -57,8 +91,8 @@ class VisitedNode:
 class Terminal:
     address: str
     reason: str  # dead-end | sweep-consolidation | bridge-lock |
-    # mixer-deposit | swap-service | otc-hawala-terminus | max-hops |
-    # max-nodes | unhandled-hop:<kind>
+    # mixer-deposit | coinjoin | swap-service | otc-hawala-terminus |
+    # max-hops | max-nodes | unhandled-hop:<kind>
 
 
 @dataclass
@@ -156,13 +190,17 @@ def traverse(
             if kind == HopKind.SWEEP_CANDIDATE.value:
                 result.terminals.append(Terminal(tgt, "sweep-consolidation"))
                 _back_label_sweep(graph, result, tx_hash)
-                visited_hop.setdefault(tgt, hop + 1)
+                _record_terminal_hop(
+                    result, visited_hop, address, tgt, hop, tx_hash, kind,
+                    attrs)
                 continue
 
             if kind == HopKind.BRIDGE_LOCK.value:
                 result.terminals.append(Terminal(tgt, "bridge-lock"))
                 _record_bridge_deposit(graph, result, address, tx_hash, attrs)
-                visited_hop.setdefault(tgt, hop + 1)
+                _record_terminal_hop(
+                    result, visited_hop, address, tgt, hop, tx_hash, kind,
+                    attrs)
                 continue
 
             if kind == HopKind.MIXER_DEPOSIT.value:
@@ -171,13 +209,31 @@ def traverse(
                 result.labels_applied.setdefault(address, [])
                 if "mixer-depositor" not in result.labels_applied[address]:
                     result.labels_applied[address].append("mixer-depositor")
-                visited_hop.setdefault(tgt, hop + 1)
+                _record_terminal_hop(
+                    result, visited_hop, address, tgt, hop, tx_hash, kind,
+                    attrs)
+                continue
+
+            if kind == HopKind.COINJOIN.value:
+                # M20: funds entered a collaborative anonymity set. Stop —
+                # walking through would claim deterministic unmixing, which
+                # the master plan forbids. Probabilistic, disclosed.
+                result.terminals.append(Terminal(tgt, "coinjoin"))
+                graph.label(address, "coinjoin-depositor")
+                result.labels_applied.setdefault(address, [])
+                if "coinjoin-depositor" not in result.labels_applied[address]:
+                    result.labels_applied[address].append("coinjoin-depositor")
+                _record_terminal_hop(
+                    result, visited_hop, address, tgt, hop, tx_hash, kind,
+                    attrs)
                 continue
 
             if kind == HopKind.SWAP_SERVICE.value:
                 result.terminals.append(Terminal(tgt, "swap-service"))
                 _record_swap_deposit(graph, result, address, tx_hash, attrs)
-                visited_hop.setdefault(tgt, hop + 1)
+                _record_terminal_hop(
+                    result, visited_hop, address, tgt, hop, tx_hash, kind,
+                    attrs)
                 continue
 
             note: Optional[str] = None

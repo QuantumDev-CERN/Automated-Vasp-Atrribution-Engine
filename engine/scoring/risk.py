@@ -64,6 +64,12 @@ def score_risk(visited: list,
             "mixer-deposit", 40,
             "funds entered a mixer anonymity set — strongest single "
             "illicit-finance indicator the engine observes"))
+    if "coinjoin" in kinds or (terminal_reason or "") == "coinjoin":
+        signals.append(RiskSignal(
+            "coinjoin", 40,
+            "funds entered a CoinJoin anonymity set (collaborative "
+            "mixing) — deliberate obfuscation, no deterministic onward "
+            "linkage"))
     if (terminal_reason or "") == "otc-hawala-terminus":
         signals.append(RiskSignal(
             "otc-hawala-terminus", 30,

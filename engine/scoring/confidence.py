@@ -32,6 +32,10 @@ KIND_DISCOUNT: dict[str, float] = {
     "bridge-lock": 0.85,
     # funds entered the anonymity set: linkage is probabilistic (M4)
     "mixer-deposit": 0.40,
+    # CoinJoin anonymity set: deterministic linkage is broken like a
+    # mixer, but denominations stay visible on-chain, leaving room for
+    # probabilistic clustering — slightly less punitive than 0.40 (M20)
+    "coinjoin": 0.50,
     # custodial swap, no on-chain linkage proof (M4 terminal label)
     "swap-service": 0.60,
 }
@@ -106,6 +110,10 @@ def score_attribution(visited: list,
         overall = _SWEEP_TERMINAL_FLOOR
     if terminal_reason == "mixer-deposit":
         notes.append("funds entered the mixer anonymity set: attribution "
+                     "is probabilistic, not deterministic")
+    if terminal_reason == "coinjoin":
+        notes.append("funds entered a CoinJoin anonymity set: deterministic "
+                     "unmixing is not claimed — attribution past this point "
                      "is probabilistic, not deterministic")
     if terminal_reason == "bridge-lock":
         notes.append("value left the chain at a bridge: cross-chain "

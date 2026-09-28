@@ -65,6 +65,10 @@ _TERMINAL_LABELS = {
     # not a failed trace.
     "otc-hawala-terminus":
         "OTC/hawala terminus — no further on-chain trail expected",
+    # M20: collaborative mixing — probabilistic by construction.
+    "coinjoin":
+        "CoinJoin — funds entered a collaborative anonymity set; "
+        "no deterministic onward trail",
 }
 
 

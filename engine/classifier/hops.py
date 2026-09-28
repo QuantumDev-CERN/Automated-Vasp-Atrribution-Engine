@@ -36,6 +36,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from ..adapters.base import CanonicalTx, Chain
+from ..clustering.coinjoin import detect_coinjoin
 from ..graph.builder import TxGraph, _COINBASE
 from ..knowledge.bridges import bridge_for
 from ..knowledge.mixers import mixer_for
@@ -62,6 +63,9 @@ class HopKind(str, Enum):
     MIXER_DEPOSIT = "mixer-deposit"
     # swap-service — detected via the curated M18 hot-wallet registry.
     SWAP_SERVICE = "swap-service"
+    # coinjoin — structurally detected collaborative CoinJoin (M20, using
+    # the M17 detector). Traversal stops: no deterministic unmixing.
+    COINJOIN = "coinjoin"
 
 
 @dataclass
@@ -94,6 +98,9 @@ def classify_edge(
     m4 = _classify_m4(tx, src, dst)
     if m4 is not None:
         return m4
+    coinjoin = _classify_coinjoin(tx)
+    if coinjoin is not None:
+        return coinjoin
     sweep = _classify_sweep(tx, dst)
     if sweep is not None:
         return sweep
@@ -193,6 +200,30 @@ def _classify_m4(
             },
         )
     return None
+
+
+def _classify_coinjoin(tx: CanonicalTx) -> Optional[HopClassification]:
+    """M20: structurally detected CoinJoin (Wasabi/Whirlpool/JoinMarket
+    shape, via the M17 detector). Runs before the sweep/peel heuristics:
+    a CoinJoin's many-input/many-output shape must never be misread as a
+    custodial sweep (false VASP attribution) or a peel chain, and the
+    walk must stop here — no deterministic unmixing, per the master plan.
+    """
+    evidence = detect_coinjoin(tx)
+    if not evidence.is_coinjoin:
+        return None
+    return HopClassification(
+        HopKind.COINJOIN,
+        0.80,
+        "coinjoin: " + "; ".join(evidence.reasons),
+        {
+            "tx_hash": tx.tx_hash,
+            "n_inputs": evidence.input_count,
+            "n_outputs": evidence.output_count,
+            "max_equal_outputs": evidence.max_equal_outputs,
+            "distinct_output_values": evidence.distinct_output_values,
+        },
+    )
 
 
 def _classify_sweep(tx: CanonicalTx, dst: str) -> Optional[HopClassification]:
