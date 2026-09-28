@@ -93,7 +93,10 @@ async def receive_attribution(request: Request) -> JSONResponse:
     case_id = payload.get("case_id")
     if case_id in _cases:
         _cases[case_id]["status"] = payload.get("status", "attributed")
-    return JSONResponse({"ack": True,
+    # M28: the mock issues a real acknowledgement reference, like the
+    # real portal would — the engine persists it on the filing record.
+    ack_ref = f"MOCK-{uuid4().hex[:12].upper()}"
+    return JSONResponse({"ack": True, "ack_ref": ack_ref,
                          "webhooks_received": len(_webhooks)})
 
 

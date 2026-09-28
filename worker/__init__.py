@@ -147,6 +147,8 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
         await store.record_filing(FilingIn(
             case_id=cid, report_id=report.id,
             status=FILING_DELIVERED if delivery.ok else FILING_FAILED,
+            # M28: persist the receiver's acknowledgement reference.
+            ack_ref=delivery.ack_ref or "",
             error="" if delivery.ok else (delivery.error or ""),
             attempts=delivery.attempts,
         ))

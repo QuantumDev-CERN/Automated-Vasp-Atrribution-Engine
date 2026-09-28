@@ -149,6 +149,7 @@ async def test_filings_register_and_resend(monkeypatch):
         ok = True
         attempts = 1
         error = ""
+        ack_ref = "MOCK-TEST123"  # M28: DeliveryResult carries ack_ref
 
     async def _fake_deliver(*a, **k):
         return _Res()

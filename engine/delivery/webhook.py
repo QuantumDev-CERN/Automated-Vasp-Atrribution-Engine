@@ -29,6 +29,9 @@ class DeliveryResult:
     attempts: int
     status_code: int | None
     error: str | None = None
+    # M28: the receiver's acknowledgement reference, when it issues
+    # one (the SAHYOG mock does; the real portal will).
+    ack_ref: str | None = None
 
 
 def sign_body(body: bytes, secret: str) -> str:
@@ -79,7 +82,15 @@ async def deliver_attribution(report, case, job, *, base_url: str,
                 resp = await client.post(url, content=body, headers=headers)
                 last_status = resp.status_code
                 if 200 <= resp.status_code < 300:
-                    return DeliveryResult(True, attempts, last_status)
+                    # M28: capture the receiver's ack reference when
+                    # present — the worker persists it on the filing.
+                    ack_ref = None
+                    try:
+                        ack_ref = resp.json().get("ack_ref") or None
+                    except Exception:  # noqa: BLE001 — non-JSON ack
+                        ack_ref = None
+                    return DeliveryResult(True, attempts, last_status,
+                                          ack_ref=ack_ref)
                 if 400 <= resp.status_code < 500:
                     return DeliveryResult(
                         False, attempts, last_status,

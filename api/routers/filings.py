@@ -127,6 +127,7 @@ async def resend_filing(filing_id: UUID, request: Request,
         case_id=rec.case_id, report_id=rec.report_id,
         channel=rec.channel,
         status=FILING_DELIVERED if delivery.ok else FILING_FAILED,
+        ack_ref=delivery.ack_ref or "",  # M28: mock-issued ack reference
         error="" if delivery.ok else (delivery.error or ""),
         attempts=delivery.attempts,
     ))
