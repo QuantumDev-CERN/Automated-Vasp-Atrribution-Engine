@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # minute marks each hour: 15 -> :00, :15, :30, :45)
     watch_poll_minutes: int = 15
 
+    # M25 indexer cache
+    indexer_cache_backend: str = "auto"  # auto | redis | memory | none
+    indexer_cache_ttl: int = 3600
+    indexer_cache_max_entries: int = 10000
+    indexer_cache_prefix: str = "vasp:idx:v1"
+
     # M12 RBAC: when true, X-API-Key is required on every protected
     # route. Default false keeps local/dev and existing tests working;
     # every action is still audit-logged under the system identity.

@@ -52,6 +52,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m23.py"]),
     ("live: scam/ransomware feed ingestion smoke M24",
      [sys.executable, "scripts/smoke_m24.py"]),
+    ("live: durable indexer cache smoke M25",
+     [sys.executable, "scripts/smoke_m25.py"]),
 ]
 
 

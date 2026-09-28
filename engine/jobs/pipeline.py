@@ -132,16 +132,20 @@ def make_adapter(chain: str) -> ChainAdapter:
 
     c = Chain(chain)
     if c == Chain.ETHEREUM:
-        return EvmAdapter(chain=c, api_key=settings.etherscan_api_key)
-    if c in (Chain.BSC, Chain.POLYGON):
-        return CovalentAdapter(chain=c, api_key=settings.covalent_api_key)
-    if c == Chain.TRON:
-        return TronAdapter(api_key=settings.trongrid_api_key)
-    if c == Chain.BITCOIN:
-        return BitcoinAdapter()
-    if c == Chain.SOLANA:
-        return SolanaAdapter()
-    raise ValueError(f"unsupported chain: {chain}")
+        adapter = EvmAdapter(chain=c, api_key=settings.etherscan_api_key)
+    elif c in (Chain.BSC, Chain.POLYGON):
+        adapter = CovalentAdapter(chain=c, api_key=settings.covalent_api_key)
+    elif c == Chain.TRON:
+        adapter = TronAdapter(api_key=settings.trongrid_api_key)
+    elif c == Chain.BITCOIN:
+        adapter = BitcoinAdapter()
+    elif c == Chain.SOLANA:
+        adapter = SolanaAdapter()
+    else:
+        raise ValueError(f"unsupported chain: {chain}")
+    # M25: durable indexer cache (backend from settings; "none" = no-op).
+    from ..indexer.cached_adapter import with_indexer_cache
+    return with_indexer_cache(adapter)
 
 
 async def _expand(graph: TxGraph, adapter: ChainAdapter, start: str,
