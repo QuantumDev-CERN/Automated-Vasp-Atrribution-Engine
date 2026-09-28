@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     indexer_cache_max_entries: int = 10000
     indexer_cache_prefix: str = "vasp:idx:v1"
 
+    # M31 rate limiter: shared per-chain throttle, calls/second.
+    # Conservative default keeps a margin under Etherscan's 3/sec cap.
+    indexer_rate_limit_per_sec: float = 2.5
+
     # M12 RBAC: when true, X-API-Key is required on every protected
     # route. Default false keeps local/dev and existing tests working;
     # every action is still audit-logged under the system identity.

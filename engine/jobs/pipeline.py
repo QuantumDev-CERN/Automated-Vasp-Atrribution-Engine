@@ -149,8 +149,12 @@ def make_adapter(chain: str) -> ChainAdapter:
     else:
         raise ValueError(f"unsupported chain: {chain}")
     # M25: durable indexer cache (backend from settings; "none" = no-op).
+    # M31: shared per-chain rate limiter sits INSIDE the cache, so
+    # cache hits never consume throttle budget — only real indexer
+    # calls wait their turn.
     from ..indexer.cached_adapter import with_indexer_cache
-    return with_indexer_cache(adapter)
+    from ..indexer.rate_limit import with_rate_limit
+    return with_indexer_cache(with_rate_limit(adapter))
 
 
 class ExpansionError(Exception):
