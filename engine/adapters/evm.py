@@ -17,6 +17,7 @@ from engine.adapters.base import (
     ChainAdapter,
     FlowParty,
 )
+from engine.knowledge.bridges import bridge_for
 
 _CHAIN_IDS: dict[Chain, int] = {
     Chain.ETHEREUM: 1,
@@ -137,6 +138,15 @@ class EvmAdapter(ChainAdapter):
             raise AdapterError(f"no code for {address}: {data}")
         return data["result"]
 
+    def _input_for(self, tx: dict, *parties: str) -> str:
+        """M21: keep full calldata when a known bridge is a counterparty
+        (needed for destination parsing); otherwise keep only the
+        10-char selector as before."""
+        full = tx.get("input") or ""
+        if any(bridge_for(self.chain, p) is not None for p in parties if p):
+            return full
+        return full[:10]
+
     # -- normalization -----------------------------------------------------
     def _normalize_native(self, tx: dict) -> CanonicalTx:
         sender = tx.get("from", "")
@@ -155,7 +165,7 @@ class EvmAdapter(ChainAdapter):
                 decimals=18,
             ),
             fee=self._fee(tx),
-            raw={"input": (tx.get("input") or "")[:10]},  # keep only selector
+            raw={"input": self._input_for(tx, sender, receiver)},
         )
 
     def _normalize_token(self, tx: dict) -> CanonicalTx:

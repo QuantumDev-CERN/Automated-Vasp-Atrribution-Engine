@@ -11,7 +11,7 @@ cost predictable — the master reference's "don't re-resolve" caching
 note is future work, not silently skipped: repeated runs re-fetch.
 """
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 from ..adapters.base import Chain, ChainAdapter
@@ -71,6 +71,25 @@ class PipelineDeps:
     case_id: Optional[str] = None
     # M13: versioned confidence calibration; None = identity (no model yet).
     calibration: Optional["CalibrationModelRec"] = None
+    # M21: destination-chain continuation depth. The primary trace runs at
+    # 0; each bridge-lock continuation runs at depth+1 and never continues
+    # further (max 1 level: no ping-pong between chains).
+    cross_chain_depth: int = 0
+    max_cross_chain_depth: int = 1
+
+
+@dataclass(frozen=True)
+class CrossChainContinuation:
+    """M21: a follow-up trace on the destination chain of a bridge lock
+    whose destination was explicitly parsed from calldata."""
+    bridge: str
+    src_chain: str
+    src_tx_hash: str
+    dest_chain: str
+    dest_address: str
+    terminal_reason: Optional[str]
+    terminal_address: Optional[str]
+    risk_total: int
 
 
 @dataclass(frozen=True)
@@ -87,6 +106,7 @@ class TraceResult:
     route: Optional[RouteRecommendation]
     drafted_request: str
     report: InvestigationReport
+    cross_chain: tuple = ()  # M21: CrossChainContinuation records
 
 
 def make_adapter(chain: str) -> ChainAdapter:
@@ -228,10 +248,54 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
             if deps.sanctions.lookup(node.address):
                 sanctions_hits.append(node.address)
 
-    attribution = score_attribution(path, terminal_reason=terminal_reason,
-                                      calibration=deps.calibration)
+    # M21: explicit bridge destinations (parsed from lock calldata).
+    explicit_locks = [b for b in result.bridge_deposits
+                      if b.direction == "lock" and b.dest_address]
+    first_label = None
+    if explicit_locks:
+        b0 = explicit_locks[0]
+        first_label = (f"{b0.dest_chain}:{b0.dest_address[:12]}…"
+                       if b0.dest_chain else b0.dest_address[:12] + "…")
+
+    attribution = score_attribution(
+        path, terminal_reason=terminal_reason,
+        bridge_explicit_destination=bool(explicit_locks),
+        bridge_destination_label=first_label,
+        calibration=deps.calibration)
     risk = score_risk(path, terminal_reason=terminal_reason,
                       sanctions_hits=tuple(sanctions_hits))
+
+    # M21: destination-chain continuation. For each lock with an
+    # explicitly parsed, adapter-supported destination, run one bounded
+    # follow-up trace on the destination chain. One level only, loop
+    # guarded, and a failed continuation never fails the primary trace.
+    cross_chain: list[CrossChainContinuation] = []
+    if deps.cross_chain_depth < deps.max_cross_chain_depth:
+        seen: set[tuple[str, str]] = {(chain, address.lower())}
+        for b in explicit_locks:
+            if not b.dest_chain:
+                continue  # parsed, but no adapter for the destination
+            pair = (b.dest_chain, b.dest_address.lower())
+            if pair in seen:
+                continue
+            seen.add(pair)
+            try:
+                sub = await run_trace_pipeline(
+                    b.dest_address, b.dest_chain, case,
+                    replace(deps,
+                            cross_chain_depth=deps.cross_chain_depth + 1))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[bridge] continuation {b.dest_chain}:"
+                      f"{b.dest_address[:12]}… failed: {exc}")
+                continue
+            cross_chain.append(CrossChainContinuation(
+                bridge=b.bridge, src_chain=chain, src_tx_hash=b.tx_hash,
+                dest_chain=b.dest_chain, dest_address=b.dest_address,
+                terminal_reason=sub.terminal_reason,
+                terminal_address=sub.terminal_address,
+                risk_total=sub.risk.total))
+            print(f"[bridge] continuation {b.dest_chain}:"
+                  f"{b.dest_address[:12]}… -> {sub.terminal_reason}")
 
     terminal_vasp = route = None
     drafted_request = ""
@@ -272,6 +336,7 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         route=route, drafted_request=drafted_request,
         bridge_deposits=tuple(result.bridge_deposits),
         swap_deposits=tuple(result.swap_deposits),
+        cross_chain=tuple(cross_chain),
         cross_case=cross_case_brief,
         calibration_version=attribution.calibration_version or ""))
 
@@ -281,4 +346,5 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         attribution=attribution, risk=risk,
         sanctions_hits=tuple(sanctions_hits),
         terminal_vasp=terminal_vasp, route=route,
-        drafted_request=drafted_request, report=report)
+        drafted_request=drafted_request, report=report,
+        cross_chain=tuple(cross_chain))

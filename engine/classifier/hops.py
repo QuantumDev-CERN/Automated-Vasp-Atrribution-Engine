@@ -37,6 +37,7 @@ from typing import Any, Optional
 
 from ..adapters.base import CanonicalTx, Chain
 from ..clustering.coinjoin import detect_coinjoin
+from ..decoding.bridges import parse_bridge_destination
 from ..graph.builder import TxGraph, _COINBASE
 from ..knowledge.bridges import bridge_for
 from ..knowledge.mixers import mixer_for
@@ -153,17 +154,31 @@ def _classify_m4(
     for addr, direction in ((dst, "lock"), (src, "release")):
         b = bridge_for(tx.chain, addr)
         if b is not None:
+            details: dict[str, Any] = {
+                "tx_hash": tx.tx_hash,
+                "bridge": b.name,
+                "direction": direction,
+                "contract": b.contract,
+            }
+            reason = (f"bridge {direction} via {b.name} "
+                      f"({addr[:12]}… on {tx.chain.value})")
+            if direction == "lock":
+                # M21: explicit destination from the lock calldata when
+                # the bridge's ABI is decodable (Wormhole transferTokens).
+                dest = parse_bridge_destination(tx)
+                if dest is not None and dest.dest_address:
+                    details["dest_chain"] = dest.dest_chain
+                    details["dest_address"] = dest.dest_address
+                    hop_to = (f"{dest.dest_chain}:{dest.dest_address[:12]}…"
+                              if dest.dest_chain else
+                              f"chain-id-{dest.wormhole_chain_id}:"
+                              f"{dest.dest_address[:12]}…")
+                    reason += f" → {hop_to}"
             return HopClassification(
                 HopKind.BRIDGE_LOCK,
                 0.9,
-                f"bridge {direction} via {b.name} "
-                f"({addr[:12]}… on {tx.chain.value})",
-                {
-                    "tx_hash": tx.tx_hash,
-                    "bridge": b.name,
-                    "direction": direction,
-                    "contract": b.contract,
-                },
+                reason,
+                details,
             )
 
     # Mixer: funds sent INTO a known pool = entering the anonymity set.
@@ -358,7 +373,7 @@ def classify_graph(graph: TxGraph) -> dict[tuple[str, str, str], HopClassificati
         # in/out, swap-service name/role).
         for k in ("bridge", "direction", "mixer", "denomination",
                   "dex", "router", "in_symbol", "out_symbol",
-                  "swap_service", "role"):
+                  "swap_service", "role", "dest_chain", "dest_address"):
             if c.details.get(k) is not None:
                 graph.g[src][dst][key][f"hop_{k}"] = c.details[k]
         out[(src, dst, key)] = c

@@ -44,6 +44,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m19.py"]),
     ("live: CoinJoin terminal + mixer path-fix smoke M20",
      [sys.executable, "scripts/smoke_m20.py"]),
+    ("live: bridge destination parsing + continuation smoke M21",
+     [sys.executable, "scripts/smoke_m21.py"]),
 ]
 
 

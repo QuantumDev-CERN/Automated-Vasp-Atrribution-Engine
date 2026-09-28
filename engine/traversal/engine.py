@@ -106,6 +106,10 @@ class BridgeDeposit:
     direction: str     # "lock" | "release"
     asset_symbol: Optional[str]
     value: str         # smallest units
+    # M21: explicitly parsed destination (Wormhole transferTokens).
+    # None when the calldata was not decodable / chain unsupported.
+    dest_chain: Optional[str] = None
+    dest_address: Optional[str] = None
 
 
 @dataclass
@@ -326,6 +330,10 @@ def _record_bridge_deposit(
             direction=direction,
             asset_symbol=symbol,
             value=value,
+            # M21: explicit destination parsed from the lock calldata
+            # (None when not decodable — correlation-only lead as before).
+            dest_chain=attrs.get("hop_dest_chain"),
+            dest_address=attrs.get("hop_dest_address"),
         )
     )
 

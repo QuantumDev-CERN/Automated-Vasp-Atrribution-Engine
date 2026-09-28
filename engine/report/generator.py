@@ -35,6 +35,7 @@ class ReportInput:
     drafted_request: str = ""
     bridge_deposits: tuple = ()
     swap_deposits: tuple = ()  # M18: custodial swap-service deposits
+    cross_chain: tuple = ()  # M21: CrossChainContinuation records
     cross_case: str = ""  # M9: syndicate brief (empty when no links)
     calibration_version: str = ""  # M13: e.g. "cal-3"; "" = uncalibrated
 
@@ -99,12 +100,20 @@ def _render_body(inp: ReportInput) -> str:
         "   Calibration   : none (raw model — no confirmed outcomes yet)")
     bridges = "\n".join(
         f"  - {b.bridge} {b.direction} on {b.chain}: tx {b.tx_hash}"
+        + (f" → {b.dest_chain}:{b.dest_address}"
+           if getattr(b, "dest_address", None) else "")
         for b in inp.bridge_deposits) or "  (none)"
     swaps = "\n".join(
         f"  - {s.service} ({s.role}) on {s.chain}: "
         f"{s.asset_symbol or '?'} {s.value} from {s.address[:12]}…, "
         f"tx {s.tx_hash}"
         for s in inp.swap_deposits) or "  (none)"
+    continued = "\n".join(
+        f"  - {c.bridge}: {c.src_chain} → {c.dest_chain}:"
+        f"{c.dest_address[:12]}… (lock tx {c.src_tx_hash[:12]}…); "
+        f"destination-chain trace ended at {c.terminal_reason or 'unknown'} "
+        f"({(c.terminal_address or '?')[:12]}…), risk {c.risk_total}"
+        for c in inp.cross_chain) or "  (none)"
 
     return f"""\
 VASP ATTRIBUTION ENGINE — INVESTIGATION REPORT
@@ -151,10 +160,13 @@ Generated: {now} (UTC)
    Swap-service deposits:
 {swaps}
 
-10. CROSS-CASE LINKS
+10. CROSS-CHAIN CONTINUATION
+{continued}
+
+11. CROSS-CASE LINKS
 {inp.cross_case or '(no other persisted case shares addresses with this case)'}
 
-11. EVIDENTIARY CERTIFICATE
+12. EVIDENTIARY CERTIFICATE
     (see attached certificate)
 """
 

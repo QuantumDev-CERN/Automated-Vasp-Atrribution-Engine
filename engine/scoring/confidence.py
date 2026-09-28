@@ -66,6 +66,7 @@ class AttributionScore:
 def score_attribution(visited: list,
                       terminal_reason: str | None = None,
                       bridge_explicit_destination: bool = False,
+                      bridge_destination_label: str | None = None,
                       calibration: CalibrationModelRec | None = None,
                       ) -> AttributionScore:
     """Score one traced path.
@@ -74,6 +75,8 @@ def score_attribution(visited: list,
     terminal_reason: Terminal.reason string, if the trail terminated.
     bridge_explicit_destination: True when the bridge hop carried an
         explicitly parsed destination address (strong correlation).
+    bridge_destination_label: human-readable "chain:address" for the
+        bridge-lock note (M21); None keeps the correlation-only note.
     calibration: M13 CalibrationModelRec — maps the final overall through
         the empirical curve. None (or an empty model) leaves the score
         unchanged.
@@ -116,8 +119,14 @@ def score_attribution(visited: list,
                      "unmixing is not claimed — attribution past this point "
                      "is probabilistic, not deterministic")
     if terminal_reason == "bridge-lock":
-        notes.append("value left the chain at a bridge: cross-chain "
-                     "continuation needs correlation, not proof")
+        if bridge_destination_label:
+            notes.append(
+                "value left the chain at a bridge with an explicitly "
+                f"parsed destination ({bridge_destination_label}): see the "
+                "cross-chain continuation in this report")
+        else:
+            notes.append("value left the chain at a bridge: cross-chain "
+                         "continuation needs correlation, not proof")
     if terminal_reason == "otc-hawala-terminus":
         notes.append("funds appear to have exited the on-chain world at an "
                      "OTC/hawala collection wallet: no further on-chain "
