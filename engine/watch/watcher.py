@@ -45,6 +45,7 @@ class WatchCheck:
     baseline: bool  # first tick: baseline established, no events
     events: list[WatchEvent] = field(default_factory=list)
     seen_hashes: list[str] = field(default_factory=list)
+    txs_examined: int = 0  # M26: raw tx rows fetched this cycle
     checked_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc))
 
@@ -70,7 +71,7 @@ async def check_watch(
     if not watch.seen_hashes and watch.last_checked_at is None:
         # first tick: learn the baseline, alert on nothing
         return WatchCheck(watch_id=watch.id, baseline=True,
-                          seen_hashes=merged)
+                          seen_hashes=merged, txs_examined=len(txs))
 
     events: list[WatchEvent] = []
     for t in fresh:
@@ -95,7 +96,7 @@ async def check_watch(
             block_time=t.block_time.isoformat() if t.block_time else None,
         ))
     return WatchCheck(watch_id=watch.id, baseline=False, events=events,
-                      seen_hashes=merged)
+                      seen_hashes=merged, txs_examined=len(txs))
 
 
 async def process_watch(
@@ -116,10 +117,21 @@ async def process_watch(
     from dataclasses import replace
     from datetime import datetime, timezone
 
-    from ..store.base import AlertRec
+    from ..store.base import AlertRec, WatchCheckRec
 
-    check = await check_watch(watch, adapter_factory,
-                              vasp_resolver=vasp_resolver)
+    # M26: every cycle is recorded — the watch detail page's history.
+    # Failures are recorded too (error set, counts zero), never swallowed.
+    txs_seen = 0
+    try:
+        check = await check_watch(watch, adapter_factory,
+                                  vasp_resolver=vasp_resolver)
+        txs_seen = check.txs_examined
+    except Exception as exc:
+        await store.record_watch_check(WatchCheckRec(
+            id=uuid.uuid4(), watch_id=watch.id,
+            checked_at=datetime.now(timezone.utc),
+            error=f"{type(exc).__name__}: {exc}"))
+        raise
     await store.set_watch(
         watch.id, watch.status, seen_hashes=check.seen_hashes,
         last_checked_at=check.checked_at)
@@ -134,6 +146,11 @@ async def process_watch(
             delivered=result.ok, created_at=datetime.now(timezone.utc)))
         delivered.append({"tx_hash": event.tx_hash,
                           "delivered": result.ok})
+    await store.record_watch_check(WatchCheckRec(
+        id=uuid.uuid4(), watch_id=watch.id, checked_at=check.checked_at,
+        txs_seen=txs_seen, new_events=len(check.events),
+        alerts_delivered=sum(1 for d in delivered if d["delivered"]),
+        baseline=check.baseline))
     return {
         "baseline": check.baseline,
         "events": [

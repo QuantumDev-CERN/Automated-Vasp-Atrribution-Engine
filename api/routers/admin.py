@@ -2,6 +2,7 @@
 
   POST   /admin/users        — create user, returns the raw API key ONCE
   GET    /admin/users        — list users (key hashes never exposed)
+  GET    /admin/users/me     — the calling user's own record
   DELETE /admin/users/{id}   — revoke a user's key
   GET    /admin/audit        — query the audit trail
 
@@ -25,6 +26,7 @@ _audit_cap = Depends(require_cap("audit"))
 
 class UserCreate(BaseModel):
     name: str
+    email: str = ""
     role: str = Field(..., examples=["viewer", "analyst", "auditor", "admin"])
     jurisdictions: list[str] = Field(default_factory=lambda: ["IN"])
 
@@ -33,9 +35,13 @@ def _dump(u: ApiUserRec) -> dict:
     return {
         "user_id": str(u.id),
         "name": u.name,
+        "email": getattr(u, "email", "") or None,
         "role": u.role,
         "jurisdictions": u.jurisdictions,
         "active": u.active,
+        # M26: no last_active column exists — honest null instead of
+        # a fabricated timestamp. (Planned: touch on each request.)
+        "last_active": None,
         "created_at": u.created_at.isoformat(),
     }
 
@@ -47,11 +53,18 @@ async def create_user(payload: UserCreate, request: Request) -> dict:
             400, f"role must be one of {', '.join(VALID_ROLES)}")
     raw_key = new_api_key()
     rec = await request.app.state.store.create_user(
-        ApiUserIn(name=payload.name, role=payload.role,
+        ApiUserIn(name=payload.name, email=payload.email,
+                  role=payload.role,
                   jurisdictions=payload.jurisdictions),
         key_hash=hash_key(raw_key))
     return {**_dump(rec), "api_key": raw_key,
             "warning": "store this key now — it is never shown again"}
+
+
+@router.get("/users/me")
+async def get_me(me: ApiUserRec = Depends(get_current_user)) -> dict:
+    """The calling user's own record (M26): the top-bar identity chip."""
+    return _dump(me)
 
 
 @router.get("/users", dependencies=[_manage])

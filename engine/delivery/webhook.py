@@ -65,7 +65,10 @@ async def deliver_attribution(report, case, job, *, base_url: str,
 
     owned = client is None
     if owned:
-        client = httpx.AsyncClient(timeout=15.0)
+        # trust_env=False: this environment's NO_PROXY contains "[::1]",
+        # which crashes httpx's proxy parsing on loopback URLs. These
+        # webhooks only ever target loopback (SAHYOG mock), so no proxy.
+        client = httpx.AsyncClient(timeout=15.0, trust_env=False)
     try:
         attempts = 0
         last_status: int | None = None
@@ -82,7 +85,8 @@ async def deliver_attribution(report, case, job, *, base_url: str,
                         False, attempts, last_status,
                         f"receiver rejected payload: {resp.status_code}")
                 last_error = f"server error: {resp.status_code}"
-            except (httpx.TransportError, httpx.TimeoutException) as exc:
+            except (httpx.TransportError, httpx.TimeoutException,
+                      httpx.InvalidURL) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
             if attempt < MAX_ATTEMPTS - 1:
                 await asyncio.sleep(BACKOFF_SECONDS[attempt])

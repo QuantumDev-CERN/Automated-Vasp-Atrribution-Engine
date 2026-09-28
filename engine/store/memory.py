@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from .base import (
     AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec,
     CalibrationModelRec, CaseIn, CaseRec, FeedbackOutcomeIn,
-    FeedbackOutcomeRec, JobRec, ReportIn, ReportRec, WatchIn, WatchRec,
+    FeedbackOutcomeRec, FilingIn, FilingRec, JobRec, ReportIn, ReportRec,
+    WatchCheckRec, WatchIn, WatchRec,
 )
 
 
@@ -25,6 +26,8 @@ class MemoryStore:
         self.reports: dict[uuid.UUID, ReportRec] = {}
         self.watches: dict[uuid.UUID, WatchRec] = {}
         self.alerts: dict[uuid.UUID, AlertRec] = {}
+        self.watch_checks: dict[uuid.UUID, WatchCheckRec] = {}
+        self.filings: dict[uuid.UUID, FilingRec] = {}
         self.users: dict[uuid.UUID, ApiUserRec] = {}
         self.audit: list[AuditEventRec] = []
         self.outcomes: dict[uuid.UUID, FeedbackOutcomeRec] = {}
@@ -45,6 +48,25 @@ class MemoryStore:
     async def set_case_status(self, case_id: uuid.UUID, status: str) -> None:
         if case_id in self.cases:
             self.cases[case_id].status = status
+
+    async def list_cases(self, *, limit: int = 50, offset: int = 0,
+                         status: str | None = None,
+                         search: str | None = None,
+                         jurisdictions: list[str] | None = None,
+                         ) -> tuple[list[CaseRec], int]:
+        recs = list(self.cases.values())
+        if jurisdictions is not None and "*" not in jurisdictions:
+            recs = [r for r in recs if r.jurisdiction in jurisdictions]
+        if status:
+            recs = [r for r in recs if r.status == status]
+        if search:
+            q = search.lower()
+            recs = [r for r in recs
+                    if q in r.fir_number.lower()
+                    or q in r.suspect_address.lower()
+                    or q in r.officer_id.lower()]
+        recs.sort(key=lambda r: r.created_at, reverse=True)
+        return recs[offset:offset + limit], len(recs)
 
     async def create_job(self, case_id: uuid.UUID, address: str,
                          chain: str) -> JobRec:
@@ -85,6 +107,18 @@ class MemoryStore:
             if rec.job_id == job_id:
                 return rec
         return None
+
+    async def get_latest_job(self, case_id: uuid.UUID) -> JobRec | None:
+        cands = [j for j in self.jobs.values() if j.case_id == case_id]
+        if not cands:
+            return None
+        return max(cands, key=lambda j: j.created_at)
+
+    async def get_report_by_case(self, case_id: uuid.UUID) -> ReportRec | None:
+        job = await self.get_latest_job(case_id)
+        if job is None:
+            return None
+        return await self.get_report_by_job(job.id)
 
     async def set_webhook_status(self, report_id: uuid.UUID,
                                  status: str) -> None:
@@ -133,11 +167,58 @@ class MemoryStore:
             (a for a in self.alerts.values() if a.watch_id == watch_id),
             key=lambda a: a.created_at)
 
+    async def record_watch_check(self, check: WatchCheckRec) -> WatchCheckRec:
+        self.watch_checks[check.id] = check
+        return check
+
+    async def list_watch_checks(
+        self, watch_id: uuid.UUID, *, limit: int = 20,
+    ) -> list[WatchCheckRec]:
+        rows = sorted(
+            (c for c in self.watch_checks.values()
+             if c.watch_id == watch_id),
+            key=lambda c: c.checked_at, reverse=True)
+        return rows[:limit]
+
+    async def set_alert_disposition(
+        self, alert_id: uuid.UUID, disposition: str, notes: str = "",
+        by: str = "",
+    ) -> bool:
+        rec = self.alerts.get(alert_id)
+        if rec is None:
+            return False
+        rec.disposition = disposition
+        rec.disposition_notes = notes
+        rec.disposition_by = by
+        rec.disposition_at = _now()
+        return True
+
+    # ------------------------------------------------------- M26 filings
+    async def record_filing(self, filing: FilingIn) -> FilingRec:
+        rec = FilingRec(id=uuid.uuid4(), filed_at=_now(), **{
+            f.name: getattr(filing, f.name)
+            for f in FilingIn.__dataclass_fields__.values()})
+        self.filings[rec.id] = rec
+        return rec
+
+    async def get_filing(self, filing_id: uuid.UUID) -> FilingRec | None:
+        return self.filings.get(filing_id)
+
+    async def list_filings(self, *, limit: int = 50, offset: int = 0,
+                           status: str | None = None,
+                           ) -> tuple[list[FilingRec], int]:
+        recs = list(self.filings.values())
+        if status:
+            recs = [r for r in recs if r.status == status]
+        recs.sort(key=lambda r: r.filed_at, reverse=True)
+        return recs[offset:offset + limit], len(recs)
+
     # ------------------------------------------------------------ M12 RBAC
     async def create_user(self, user: ApiUserIn,
                           key_hash: str) -> ApiUserRec:
         rec = ApiUserRec(id=uuid.uuid4(), name=user.name, role=user.role,
                          jurisdictions=list(user.jurisdictions),
+                         email=user.email,
                          key_hash=key_hash, created_at=_now())
         self.users[rec.id] = rec
         return rec

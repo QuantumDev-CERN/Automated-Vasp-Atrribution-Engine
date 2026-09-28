@@ -385,11 +385,26 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
     if deps.graph_store is not None and deps.case_id:
         from ..intel import find_case_links, syndicate_summary
 
+        # M26: persist the classified hop path + outcome summary in the
+        # case meta — powers graph stats (classifier breakdown), the
+        # enriched path view, and the case latest-job summary without
+        # re-deriving anything.
+        meta = {"subject": address, "chain": chain,
+                "terminal": terminal_address,
+                "terminal_reason": terminal_reason,
+                "risk_score": risk.total,
+                "risk_level": risk.level,
+                "confidence": attribution.overall,
+                "hops": [
+                    {"address": vn.address, "hop": vn.hop,
+                     "kind": (vn.via_kind.value
+                              if hasattr(vn.via_kind, "value")
+                              else vn.via_kind),
+                     "confidence": vn.via_confidence,
+                     "via_tx": vn.via_tx, "note": vn.note}
+                    for vn in path]}
         stats = await deps.graph_store.save_case_subgraph(
-            deps.case_id, graph,
-            meta={"subject": address, "chain": chain,
-                  "terminal": terminal_address,
-                  "terminal_reason": terminal_reason})
+            deps.case_id, graph, meta=meta)
         for t in result.terminals:
             await deps.graph_store.tag_address(
                 t.address, chain, t.reason,

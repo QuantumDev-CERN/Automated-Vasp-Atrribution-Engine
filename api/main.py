@@ -9,6 +9,7 @@ from api.core.logging import setup_logging
 from api.routers.admin import router as admin_router
 from api.routers.cases import router as cases_router
 from api.routers.feedback import router as feedback_router
+from api.routers.filings import router as filings_router
 from api.routers.graph import router as graph_router
 from api.routers.health import router as health_router
 from api.routers.jobs import router as jobs_router
@@ -45,6 +46,7 @@ app.include_router(cases_router)
 app.include_router(graph_router)
 app.include_router(jobs_router)
 app.include_router(reports_router)
+app.include_router(filings_router)
 app.include_router(watchlist_router)
 app.include_router(admin_router)
 app.include_router(feedback_router)

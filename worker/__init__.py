@@ -97,6 +97,13 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
                 result.report.certificate.generated_at),
             engine_version=result.report.certificate.engine_version,
             certificate_statement=result.report.certificate.statement,
+            # M26: durable outcome summary for the console read APIs.
+            risk_score=result.risk.total,
+            risk_level=result.risk.level,
+            confidence=result.attribution.overall,
+            terminal_address=result.terminal_address,
+            terminal_reason=result.terminal_reason,
+            hop_count=len(result.path),
         ))
         await store.set_job(jid, "done")
         await store.set_case_status(cid, "attributed")
@@ -108,6 +115,17 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
             secret=settings.engine_webhook_secret)
         await store.set_webhook_status(
             report.id, "delivered" if delivery.ok else "failed")
+        # M26: durable filing record for every delivery attempt — the
+        # filings register reads this, not the mock's in-memory log.
+        from engine.store.base import (
+            FILING_DELIVERED, FILING_FAILED, FilingIn,
+        )
+        await store.record_filing(FilingIn(
+            case_id=cid, report_id=report.id,
+            status=FILING_DELIVERED if delivery.ok else FILING_FAILED,
+            error="" if delivery.ok else (delivery.error or ""),
+            attempts=delivery.attempts,
+        ))
         log.info("job %s done: report %s webhook_ok=%s",
                  job_id, report.id, delivery.ok)
         return {"report_id": str(report.id), "webhook_ok": delivery.ok}

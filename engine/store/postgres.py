@@ -12,7 +12,8 @@ from . import models
 from .base import (
     AlertRec, ApiUserIn, ApiUserRec, AuditEventIn, AuditEventRec,
     CalibrationModelRec, CaseIn, CaseRec, FeedbackOutcomeIn,
-    FeedbackOutcomeRec, JobRec, ReportIn, ReportRec,
+    FeedbackOutcomeRec, FilingIn, FilingRec, JobRec, ReportIn, ReportRec,
+    WatchCheckRec,
 )
 
 
@@ -27,6 +28,7 @@ def _case(rec: models.Case) -> CaseRec:
 def _api_user(rec: models.ApiUser) -> ApiUserRec:
     return ApiUserRec(id=rec.id, name=rec.name, role=rec.role,
                       jurisdictions=list(rec.jurisdictions or []),
+                      email=rec.email or "",
                       key_hash=rec.key_hash, created_at=rec.created_at,
                       revoked_at=rec.revoked_at)
 
@@ -69,7 +71,11 @@ def _report(rec: models.ReportRecord) -> ReportRec:
         inputs_hash=rec.inputs_hash, generated_at=rec.generated_at,
         engine_version=rec.engine_version,
         certificate_statement=rec.certificate_statement,
-        webhook_status=rec.webhook_status, created_at=rec.created_at)
+        webhook_status=rec.webhook_status, created_at=rec.created_at,
+        risk_score=rec.risk_score, risk_level=rec.risk_level or "",
+        confidence=rec.confidence,
+        terminal_address=rec.terminal_address,
+        terminal_reason=rec.terminal_reason, hop_count=rec.hop_count)
 
 
 def _watch(rec: models.Watch) -> "WatchRec":
@@ -77,9 +83,30 @@ def _watch(rec: models.Watch) -> "WatchRec":
     return WatchRec(
         id=rec.id, address=rec.address, chain=rec.chain, label=rec.label,
         case_id=rec.case_id, alert_url=rec.alert_url,
-        created_by=rec.created_by, status=rec.status,
+        created_by=rec.created_by, classification=rec.classification or "",
+        status=rec.status,
         seen_hashes=list(rec.seen_hashes or []),
         last_checked_at=rec.last_checked_at, created_at=rec.created_at)
+
+
+def _alert(rec: models.WatchAlert) -> "AlertRec":
+    from .base import AlertRec
+    return AlertRec(
+        id=rec.id, watch_id=rec.watch_id, tx_hash=rec.tx_hash,
+        direction=rec.direction, counterparty=rec.counterparty,
+        value=rec.value, asset=rec.asset, vasp_hit=rec.vasp_hit,
+        delivered=rec.delivered, created_at=rec.created_at,
+        disposition=rec.disposition or "",
+        disposition_notes=rec.disposition_notes or "",
+        disposition_by=rec.disposition_by or "",
+        disposition_at=rec.disposition_at)
+
+
+def _filing(rec: models.Filing) -> FilingRec:
+    return FilingRec(
+        id=rec.id, case_id=rec.case_id, report_id=rec.report_id,
+        channel=rec.channel, status=rec.status, ack_ref=rec.ack_ref or "",
+        error=rec.error or "", attempts=rec.attempts, filed_at=rec.filed_at)
 
 
 class PostgresStore:
@@ -109,6 +136,52 @@ class PostgresStore:
             if rec:
                 rec.status = status
                 await s.commit()
+
+    async def list_cases(self, *, limit: int = 50, offset: int = 0,
+                         status: str | None = None,
+                         search: str | None = None,
+                         jurisdictions: list[str] | None = None,
+                         ) -> tuple[list[CaseRec], int]:
+        from sqlalchemy import func, or_
+        async with self._sessions() as s:
+            q = select(models.Case)
+            count_q = select(func.count()).select_from(models.Case)
+            if jurisdictions is not None and "*" not in jurisdictions:
+                q = q.where(models.Case.jurisdiction.in_(jurisdictions))
+                count_q = count_q.where(
+                    models.Case.jurisdiction.in_(jurisdictions))
+            if status:
+                q = q.where(models.Case.status == status)
+                count_q = count_q.where(models.Case.status == status)
+            if search:
+                like = f"%{search}%"
+                cond = or_(models.Case.fir_number.ilike(like),
+                           models.Case.suspect_address.ilike(like),
+                           models.Case.officer_id.ilike(like))
+                q = q.where(cond)
+                count_q = count_q.where(cond)
+            total = (await s.execute(count_q)).scalar_one()
+            q = q.order_by(models.Case.created_at.desc()
+                           ).limit(limit).offset(offset)
+            rows = (await s.execute(q)).scalars().all()
+            return [_case(r) for r in rows], total
+
+    async def get_latest_job(self, case_id: uuid.UUID) -> JobRec | None:
+        async with self._sessions() as s:
+            res = await s.execute(
+                select(models.TraceJob).where(
+                    models.TraceJob.case_id == case_id).order_by(
+                    models.TraceJob.created_at.desc()).limit(1))
+            rec = res.scalar_one_or_none()
+            return _job(rec) if rec else None
+
+    async def get_report_by_case(
+        self, case_id: uuid.UUID,
+    ) -> ReportRec | None:
+        job = await self.get_latest_job(case_id)
+        if job is None:
+            return None
+        return await self.get_report_by_job(job.id)
 
     async def create_job(self, case_id: uuid.UUID, address: str,
                          chain: str) -> JobRec:
@@ -147,7 +220,13 @@ class PostgresStore:
                 inputs_hash=report.inputs_hash,
                 generated_at=report.generated_at,
                 engine_version=report.engine_version,
-                certificate_statement=report.certificate_statement)
+                certificate_statement=report.certificate_statement,
+                risk_score=report.risk_score,
+                risk_level=report.risk_level or "",
+                confidence=report.confidence,
+                terminal_address=report.terminal_address,
+                terminal_reason=report.terminal_reason,
+                hop_count=report.hop_count)
             s.add(rec)
             await s.commit()
             return _report(rec)
@@ -181,7 +260,8 @@ class PostgresStore:
             rec = models.Watch(
                 address=watch.address, chain=watch.chain, label=watch.label,
                 case_id=watch.case_id, alert_url=watch.alert_url,
-                created_by=watch.created_by)
+                created_by=watch.created_by,
+                classification=watch.classification or "")
             s.add(rec)
             await s.commit()
             await s.refresh(rec)
@@ -232,19 +312,90 @@ class PostgresStore:
             return alert
 
     async def list_alerts(self, watch_id: uuid.UUID) -> list["AlertRec"]:
-        from .base import AlertRec
         async with self._sessions() as s:
             res = await s.execute(
                 select(models.WatchAlert).where(
                     models.WatchAlert.watch_id == watch_id).order_by(
                     models.WatchAlert.created_at))
+            return [_alert(r) for r in res.scalars().all()]
+
+    async def record_watch_check(self, check: WatchCheckRec) -> WatchCheckRec:
+        async with self._sessions() as s:
+            rec = models.WatchCheck(
+                id=check.id, watch_id=check.watch_id,
+                checked_at=check.checked_at, txs_seen=check.txs_seen,
+                new_events=check.new_events,
+                alerts_delivered=check.alerts_delivered,
+                baseline=check.baseline, error=check.error or "")
+            s.add(rec)
+            await s.commit()
+            return check
+
+    async def list_watch_checks(
+        self, watch_id: uuid.UUID, *, limit: int = 20,
+    ) -> list[WatchCheckRec]:
+        async with self._sessions() as s:
+            res = await s.execute(
+                select(models.WatchCheck).where(
+                    models.WatchCheck.watch_id == watch_id).order_by(
+                    models.WatchCheck.checked_at.desc()).limit(limit))
             return [
-                AlertRec(id=r.id, watch_id=r.watch_id, tx_hash=r.tx_hash,
-                         direction=r.direction, counterparty=r.counterparty,
-                         value=r.value, asset=r.asset, vasp_hit=r.vasp_hit,
-                         delivered=r.delivered, created_at=r.created_at)
+                WatchCheckRec(
+                    id=r.id, watch_id=r.watch_id, checked_at=r.checked_at,
+                    txs_seen=r.txs_seen, new_events=r.new_events,
+                    alerts_delivered=r.alerts_delivered, baseline=r.baseline,
+                    error=r.error or "")
                 for r in res.scalars().all()
             ]
+
+    async def set_alert_disposition(
+        self, alert_id: uuid.UUID, disposition: str, notes: str = "",
+        by: str = "",
+    ) -> bool:
+        async with self._sessions() as s:
+            rec = await s.get(models.WatchAlert, alert_id)
+            if rec is None:
+                return False
+            rec.disposition = disposition
+            rec.disposition_notes = notes
+            rec.disposition_by = by
+            rec.disposition_at = datetime.now(timezone.utc)
+            await s.commit()
+            return True
+
+    # ------------------------------------------------------- M26 filings
+    async def record_filing(self, filing: FilingIn) -> FilingRec:
+        async with self._sessions() as s:
+            rec = models.Filing(
+                case_id=filing.case_id, report_id=filing.report_id,
+                channel=filing.channel, status=filing.status,
+                ack_ref=filing.ack_ref or "", error=filing.error or "",
+                attempts=filing.attempts)
+            s.add(rec)
+            await s.commit()
+            await s.refresh(rec)
+            return _filing(rec)
+
+    async def get_filing(self, filing_id: uuid.UUID) -> FilingRec | None:
+        async with self._sessions() as s:
+            rec = await s.get(models.Filing, filing_id)
+            return _filing(rec) if rec else None
+
+    async def list_filings(self, *, limit: int = 50, offset: int = 0,
+                           status: str | None = None,
+                           ) -> tuple[list[FilingRec], int]:
+        from sqlalchemy import func
+        async with self._sessions() as s:
+            q = select(models.Filing)
+            count_q = select(func.count()).select_from(models.Filing)
+            if status:
+                q = q.where(models.Filing.status == status)
+                count_q = count_q.where(models.Filing.status == status)
+            total = (await s.execute(count_q)).scalar_one()
+            q = q.order_by(models.Filing.filed_at.desc()
+                           ).limit(limit).offset(offset)
+            rows = (await s.execute(q)).scalars().all()
+            return [_filing(r) for r in rows], total
 
     # ------------------------------------------------------------ M12 RBAC
     async def create_user(self, user: ApiUserIn,
@@ -252,6 +403,7 @@ class PostgresStore:
         async with self._sessions() as s:
             rec = models.ApiUser(name=user.name, role=user.role,
                                  jurisdictions=list(user.jurisdictions),
+                                 email=user.email or "",
                                  key_hash=key_hash)
             s.add(rec)
             await s.commit()

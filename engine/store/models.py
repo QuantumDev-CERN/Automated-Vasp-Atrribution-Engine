@@ -72,6 +72,15 @@ class ReportRecord(Base):
     certificate_statement: Mapped[str] = mapped_column(Text)
     webhook_status: Mapped[str] = mapped_column(
         String(32), default="pending")  # pending|delivered|failed
+    # M26: trace outcome summary — durable without parsing report_text.
+    risk_score: Mapped[int | None] = mapped_column(nullable=True)
+    risk_level: Mapped[str] = mapped_column(String(16), default="")
+    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    terminal_address: Mapped[str | None] = mapped_column(
+        String(128), nullable=True)
+    terminal_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True)
+    hop_count: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow)
 
@@ -89,6 +98,7 @@ class Watch(Base):
         UUID(as_uuid=True), ForeignKey("cases.id"), nullable=True)
     alert_url: Mapped[str] = mapped_column(String(512), default="")
     created_by: Mapped[str] = mapped_column(String(64), default="")
+    classification: Mapped[str] = mapped_column(String(64), default="")
     status: Mapped[str] = mapped_column(String(32), default="active")
     seen_hashes: Mapped[list] = mapped_column(JSONB, default=list)
     last_checked_at: Mapped[datetime | None] = mapped_column(
@@ -112,7 +122,51 @@ class WatchAlert(Base):
     asset: Mapped[str] = mapped_column(String(64), default="")
     vasp_hit: Mapped[str | None] = mapped_column(String(128), nullable=True)
     delivered: Mapped[bool] = mapped_column(default=False)
+    # M26: analyst disposition ("" = not reviewed).
+    disposition: Mapped[str] = mapped_column(String(32), default="")
+    disposition_notes: Mapped[str] = mapped_column(Text, default="")
+    disposition_by: Mapped[str] = mapped_column(String(128), default="")
+    disposition_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow)
+
+
+class WatchCheck(Base):
+    """M26: one row per watch-check cycle — the watch detail history."""
+    __tablename__ = "watch_checks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    watch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("watches.id"))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    txs_seen: Mapped[int] = mapped_column(default=0)
+    new_events: Mapped[int] = mapped_column(default=0)
+    alerts_delivered: Mapped[int] = mapped_column(default=0)
+    baseline: Mapped[bool] = mapped_column(default=False)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
+class Filing(Base):
+    """M26: durable register of attribution filings with authorities.
+    The worker records one row per webhook delivery attempt; the
+    SAHYOG mock's in-memory log is not durable."""
+    __tablename__ = "filings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cases.id"))
+    report_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("reports.id"))
+    channel: Mapped[str] = mapped_column(String(32), default="sahyog")
+    status: Mapped[str] = mapped_column(
+        String(32), default="pending")  # pending|delivered|failed
+    ack_ref: Mapped[str] = mapped_column(String(256), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    attempts: Mapped[int] = mapped_column(default=0)
+    filed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow)
 
 
@@ -126,6 +180,7 @@ class ApiUser(Base):
     name: Mapped[str] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(16))  # viewer|analyst|auditor|admin
     jurisdictions: Mapped[list] = mapped_column(JSONB, default=list)
+    email: Mapped[str] = mapped_column(String(256), default="")
     key_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow)

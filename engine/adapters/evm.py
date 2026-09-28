@@ -61,10 +61,13 @@ class EvmAdapter(ChainAdapter):
             },
         )
         if not isinstance(data, dict) or data.get("status") != "1":
-            # "0" with "No transactions found" is a valid empty result
+            # "0" with "No transactions found" is a valid empty result.
+            # Etherscan puts the sentence in "message" (with result=[])
+            # on some calls and in "result" on others — check both.
             msg = data.get("message", "") if isinstance(data, dict) else ""
             result = data.get("result", "") if isinstance(data, dict) else ""
-            if "no transactions found" in str(result).lower():
+            if ("no transactions found" in str(msg).lower()
+                    or "no transactions found" in str(result).lower()):
                 return []
             raise AdapterError(f"Etherscan V2 error: {msg} / {result}")
         return data.get("result", [])

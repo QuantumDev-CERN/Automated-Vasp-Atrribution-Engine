@@ -57,11 +57,19 @@ class ReportIn:
     generated_at: datetime
     engine_version: str
     certificate_statement: str
+    # M26: trace outcome summary — durable, queryable without parsing
+    # report_text or depending on the graph store.
+    risk_score: int | None = None          # 0..100
+    risk_level: str = ""                   # low|medium|high|critical
+    confidence: float | None = None        # 0..1 overall attribution
+    terminal_address: str | None = None
+    terminal_reason: str | None = None
+    hop_count: int | None = None
 
 
 @dataclass
 class ReportRec(ReportIn):
-    id: UUID
+    id: UUID = field(default=None)  # type: ignore[assignment]
     webhook_status: str = "pending"
     created_at: datetime = field(default=None)  # type: ignore[assignment]
 
@@ -74,6 +82,9 @@ class WatchIn:
     case_id: UUID | None = None
     alert_url: str = ""
     created_by: str = ""
+    classification: str = ""  # M26: operator-set category, e.g.
+    # "ransomware" | "scam" | "mixer" | "sanctions" — free text, never
+    # inferred by the engine.
 
 
 @dataclass
@@ -97,6 +108,32 @@ class AlertRec:
     vasp_hit: str | None
     delivered: bool
     created_at: datetime
+    # M26: analyst disposition — set via
+    # PATCH /watchlist/{watch_id}/alerts/{alert_id}. Empty = not reviewed.
+    disposition: str = ""  # true_positive|false_positive|benign|escalated
+    disposition_notes: str = ""
+    disposition_by: str = ""
+    disposition_at: datetime | None = None
+
+
+#: allowed values for AlertRec.disposition (M26)
+VALID_DISPOSITIONS = ("true_positive", "false_positive", "benign",
+                      "escalated")
+
+
+@dataclass
+class WatchCheckRec:
+    """M26: one persisted watch-check cycle — the watch detail page's
+    history. Recorded by process_watch on every run (baseline or not),
+    including failures (error set, counts zero)."""
+    id: UUID
+    watch_id: UUID
+    checked_at: datetime
+    txs_seen: int = 0
+    new_events: int = 0
+    alerts_delivered: int = 0
+    baseline: bool = False
+    error: str = ""
 
 
 # ------------------------------------------------------------------ M12 RBAC
@@ -117,13 +154,14 @@ class ApiUserIn:
     name: str
     role: str  # one of VALID_ROLES
     jurisdictions: list[str]  # e.g. ["IN"]; ["*"] = every jurisdiction
+    email: str = ""  # M26: operator contact; shown in the admin console
 
 
 @dataclass
 class ApiUserRec(ApiUserIn):
-    id: UUID
-    key_hash: str  # sha256 of the raw API key; the raw key is never stored
-    created_at: datetime
+    id: UUID = field(default=None)  # type: ignore[assignment]
+    key_hash: str = ""  # sha256 of the raw API key; never stored raw
+    created_at: datetime = field(default=None)  # type: ignore[assignment]
     revoked_at: datetime | None = None
 
     @property
@@ -154,6 +192,38 @@ class AuditEventIn:
 class AuditEventRec(AuditEventIn):
     id: UUID = field(default=None)  # type: ignore[assignment]
     created_at: datetime = field(default=None)  # type: ignore[assignment]
+
+
+# ------------------------------------------------------- M26 filings ----
+
+#: delivery channels for a filing
+FILING_CHANNEL_SAHYOG = "sahyog"
+
+#: filing lifecycle
+FILING_PENDING = "pending"
+FILING_DELIVERED = "delivered"
+FILING_FAILED = "failed"
+
+
+@dataclass
+class FilingIn:
+    """M26: one durable record of an attribution package filed with an
+    authority. Recorded by the worker on every webhook delivery attempt
+    (success or failure) and by POST /filings/{id}/resend. The SAHYOG
+    mock's in-memory log is not durable — this is."""
+    case_id: UUID
+    report_id: UUID
+    channel: str = FILING_CHANNEL_SAHYOG
+    status: str = FILING_PENDING  # pending|delivered|failed
+    ack_ref: str = ""   # receiver's acknowledgement reference, if any
+    error: str = ""     # failure detail when status == failed
+    attempts: int = 0   # webhook POST attempts for this filing
+
+
+@dataclass
+class FilingRec(FilingIn):
+    id: UUID = field(default=None)  # type: ignore[assignment]
+    filed_at: datetime = field(default=None)  # type: ignore[assignment]
 
 
 # -------------------------------------------------------------- M13 feedback
@@ -197,6 +267,13 @@ class Store(Protocol):
     async def create_case(self, case: CaseIn) -> CaseRec: ...
     async def get_case(self, case_id: UUID) -> CaseRec | None: ...
     async def set_case_status(self, case_id: UUID, status: str) -> None: ...
+    # M26: paginated case register. jurisdictions=None = no scoping;
+    # otherwise only cases whose jurisdiction is in the list.
+    async def list_cases(self, *, limit: int = 50, offset: int = 0,
+                         status: str | None = None,
+                         search: str | None = None,
+                         jurisdictions: list[str] | None = None,
+                         ) -> tuple[list[CaseRec], int]: ...
 
     async def create_job(self, case_id: UUID, address: str,
                          chain: str) -> JobRec: ...
@@ -204,6 +281,9 @@ class Store(Protocol):
     async def set_job(self, job_id: UUID, status: str,
                       arq_job_id: str | None = None,
                       error: str | None = None) -> None: ...
+    # M26: latest job / report for a case (powers the case detail view).
+    async def get_latest_job(self, case_id: UUID) -> JobRec | None: ...
+    async def get_report_by_case(self, case_id: UUID) -> ReportRec | None: ...
 
     async def save_report(self, report: ReportIn) -> ReportRec: ...
     async def get_report(self, report_id: UUID) -> ReportRec | None: ...
@@ -221,6 +301,22 @@ class Store(Protocol):
     async def remove_watch(self, watch_id: UUID) -> None: ...
     async def record_alert(self, alert: AlertRec) -> AlertRec: ...
     async def list_alerts(self, watch_id: UUID) -> list[AlertRec]: ...
+    # M26: watch check history + alert dispositions
+    async def record_watch_check(self, check: WatchCheckRec) -> WatchCheckRec: ...
+    async def list_watch_checks(
+        self, watch_id: UUID, *, limit: int = 20,
+    ) -> list[WatchCheckRec]: ...
+    async def set_alert_disposition(
+        self, alert_id: UUID, disposition: str, notes: str = "",
+        by: str = "",
+    ) -> bool: ...
+
+    # M26: durable filings register
+    async def record_filing(self, filing: FilingIn) -> FilingRec: ...
+    async def get_filing(self, filing_id: UUID) -> FilingRec | None: ...
+    async def list_filings(self, *, limit: int = 50, offset: int = 0,
+                           status: str | None = None,
+                           ) -> tuple[list[FilingRec], int]: ...
 
     # -- M12: users, API keys, audit trail ---------------------------
     async def create_user(self, user: ApiUserIn,
