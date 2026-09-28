@@ -29,6 +29,7 @@ async def startup(ctx) -> None:
     ctx["settings"] = settings
     ctx["store"] = await init_store(settings)
     ctx["sanctions"] = _load_sanctions(settings)
+    ctx["threat_feeds"] = _load_threat_feeds()
     ctx["graph_store"] = get_graph_store()  # M8: Neo4j or memory fallback
     log.info("worker startup complete")
 
@@ -41,6 +42,28 @@ def _load_sanctions(settings):
         return SanctionsList.from_ofac_xml(path)
     log.info("sanctions: fixture sample")
     return SanctionsList.from_fixture()
+
+
+def _load_threat_feeds():
+    """M26: newest local snapshots (scripts/refresh_threat_feeds.py).
+    None when absent — the pipeline then skips feed checks instead of
+    inventing them. Corrupt snapshots raise (fail loudly)."""
+    from engine.intel.threat_feeds import load_snapshots
+
+    try:
+        feeds = load_snapshots()
+    except Exception as exc:  # noqa: BLE001 — corrupt snapshot: loud
+        log.error("threat feeds: snapshot corrupt, refusing to start "
+                  "feed checks: %s", exc)
+        raise
+    if feeds is None:
+        log.warning("threat feeds: no snapshot in data/threat_feeds/ — "
+                    "feed checks disabled (run "
+                    "scripts/refresh_threat_feeds.py)")
+    else:
+        log.info("threat feeds: %d records (%d skipped malformed)",
+                 len(feeds.records), feeds.skipped)
+    return feeds
 
 
 async def shutdown(ctx) -> None:
@@ -82,6 +105,7 @@ async def trace_wallet(ctx, *, job_id: str, case_id: str, address: str,
         )
         deps = PipelineDeps(adapter_factory=make_adapter,
                             sanctions=sanctions,
+                            threat_feeds=ctx.get("threat_feeds"),
                             graph_store=ctx.get("graph_store"),
                             case_id=str(cid),
                             calibration=await store.get_calibration())

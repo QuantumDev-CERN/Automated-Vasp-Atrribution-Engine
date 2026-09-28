@@ -3,8 +3,8 @@
 Downloads both feeds, validates their shapes (unknown shapes fail
 loudly instead of ingesting garbage), and writes dated snapshots to
 data/threat_feeds/ (gitignored). The engine loads them via
-engine.intel.threat_feeds.parse_*_file; if no snapshot exists, the
-pipeline falls back to the vendored fixture sample.
+engine.intel.threat_feeds.load_snapshots; if no snapshot exists, the
+pipeline skips feed checks (it never invents feed data).
 
 Run: uv run python scripts/refresh_threat_feeds.py
 """

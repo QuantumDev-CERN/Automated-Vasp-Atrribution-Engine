@@ -138,6 +138,26 @@ def merge(*lists: ThreatFeedList) -> ThreatFeedList:
     return ThreatFeedList(records=tuple(records), skipped=skipped)
 
 
+def load_snapshots(data_dir: str | Path = "data/threat_feeds"
+                   ) -> ThreatFeedList | None:
+    """Load the newest ScamSniffer + Ransomwhere snapshots written by
+    scripts/refresh_threat_feeds.py. Returns None when no snapshot
+    exists (the pipeline then skips feed checks — it never invents
+    feed data). Raises on a corrupt snapshot: a half-written feed
+    must fail loudly, not silently degrade."""
+    data_dir = Path(data_dir)
+    lists: list[ThreatFeedList] = []
+    for prefix, parser in (("scamsniffer-", parse_scamsniffer_file),
+                           ("ransomwhere-", parse_ransomwhere_file)):
+        paths = sorted(data_dir.glob(f"{prefix}*.json"))
+        if not paths:
+            continue
+        lists.append(parser(paths[-1]))  # newest dated snapshot
+    if not lists:
+        return None
+    return merge(*lists)
+
+
 def from_fixture(
         path: Optional[str | Path] = None) -> ThreatFeedList:
     """Vendored sample of REAL entries (with provenance in _meta)."""
