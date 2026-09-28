@@ -26,10 +26,12 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from ..classifier.hops import HopKind, classify_graph
 from ..graph.builder import TxGraph, _COINBASE
+from ..knowledge.mixers import mixer_for
 
 # Hop kinds with no traversal strategy yet. Empty since M18 (swap-service
 # was the last unhandled kind); kept as the mechanism for future kinds.
@@ -131,6 +133,24 @@ class SwapDeposit:
 
 
 @dataclass
+class MixerDeposit:
+    """Value deposited into a known mixer pool (M22).
+
+    Input to the mixer-correlation heuristics: the pool's fixed
+    denomination scopes the candidate set, and the deposit timestamp
+    anchors the timing heuristic.
+    """
+
+    address: str       # depositor (the traced party)
+    tx_hash: str
+    chain: str
+    mixer: str         # "tornado-cash"
+    pool: str          # pool contract address
+    denomination: str  # fixed pool size, smallest units
+    block_time: Optional[datetime] = None  # deposit timestamp when known
+
+
+@dataclass
 class TraversalResult:
     start: str
     visited: list[VisitedNode] = field(default_factory=list)
@@ -140,6 +160,8 @@ class TraversalResult:
     labels_applied: dict[str, list[str]] = field(default_factory=dict)
     bridge_deposits: list[BridgeDeposit] = field(default_factory=list)
     swap_deposits: list[SwapDeposit] = field(default_factory=list)
+    # M22: deposits into known mixer pools (inputs to correlation).
+    mixer_deposits: list[MixerDeposit] = field(default_factory=list)
 
 
 def _ensure_classified(graph: TxGraph) -> None:
@@ -213,6 +235,7 @@ def traverse(
                 result.labels_applied.setdefault(address, [])
                 if "mixer-depositor" not in result.labels_applied[address]:
                     result.labels_applied[address].append("mixer-depositor")
+                _record_mixer_deposit(graph, result, address, tgt, tx_hash)
                 _record_terminal_hop(
                     result, visited_hop, address, tgt, hop, tx_hash, kind,
                     attrs)
@@ -334,6 +357,33 @@ def _record_bridge_deposit(
             # (None when not decodable — correlation-only lead as before).
             dest_chain=attrs.get("hop_dest_chain"),
             dest_address=attrs.get("hop_dest_address"),
+        )
+    )
+
+
+def _record_mixer_deposit(
+    graph: TxGraph,
+    result: TraversalResult,
+    src: str,
+    pool: str,
+    tx_hash: str,
+) -> None:
+    """Record a mixer-pool deposit as input to the M22 correlation."""
+    tx = graph.tx(tx_hash)
+    if tx is None:
+        return
+    info = mixer_for(tx.chain, pool)
+    if info is None:
+        return
+    result.mixer_deposits.append(
+        MixerDeposit(
+            address=src,
+            tx_hash=tx_hash,
+            chain=tx.chain.value,
+            mixer=info.name,
+            pool=info.pool,
+            denomination=info.denomination,
+            block_time=tx.block_time,
         )
     )
 

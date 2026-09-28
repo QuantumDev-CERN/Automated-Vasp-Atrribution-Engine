@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from ..scoring import AttributionScore, RiskScore
+from ..intel.mixer_correlation import CAVEAT as MIXER_CAVEAT
 from ..vasp import (
     VaspRecord,
     CaseDetails,
@@ -36,6 +37,7 @@ class ReportInput:
     bridge_deposits: tuple = ()
     swap_deposits: tuple = ()  # M18: custodial swap-service deposits
     cross_chain: tuple = ()  # M21: CrossChainContinuation records
+    mixer_correlation: tuple = ()  # M22: MixerWithdrawalCandidate records
     cross_case: str = ""  # M9: syndicate brief (empty when no links)
     calibration_version: str = ""  # M13: e.g. "cal-3"; "" = uncalibrated
 
@@ -114,6 +116,18 @@ def _render_body(inp: ReportInput) -> str:
         f"destination-chain trace ended at {c.terminal_reason or 'unknown'} "
         f"({(c.terminal_address or '?')[:12]}…), risk {c.risk_total}"
         for c in inp.cross_chain) or "  (none)"
+    if inp.mixer_correlation:
+        m0 = inp.mixer_correlation[0]
+        mixer_corr = (
+            f"  Pool {m0.pool[:12]}… ({m0.denomination} wei): "
+            f"{len(inp.mixer_correlation)} candidate withdrawal(s).\n"
+            + "\n".join(
+                f"  - tx {c.withdrawal_tx[:12]}… (caller {c.caller[:12]}…), "
+                f"score {c.combined_score}: {c.note}"
+                for c in inp.mixer_correlation)
+            + f"\n  {MIXER_CAVEAT}")
+    else:
+        mixer_corr = "  (none)"
 
     return f"""\
 VASP ATTRIBUTION ENGINE — INVESTIGATION REPORT
@@ -163,10 +177,13 @@ Generated: {now} (UTC)
 10. CROSS-CHAIN CONTINUATION
 {continued}
 
-11. CROSS-CASE LINKS
+11. MIXER CORRELATION (PROBABILISTIC — NOT ATTRIBUTION)
+{mixer_corr}
+
+12. CROSS-CASE LINKS
 {inp.cross_case or '(no other persisted case shares addresses with this case)'}
 
-12. EVIDENTIARY CERTIFICATE
+13. EVIDENTIARY CERTIFICATE
     (see attached certificate)
 """
 

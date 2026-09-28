@@ -46,6 +46,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m20.py"]),
     ("live: bridge destination parsing + continuation smoke M21",
      [sys.executable, "scripts/smoke_m21.py"]),
+    ("live: mixer correlation heuristics smoke M22",
+     [sys.executable, "scripts/smoke_m22.py"]),
 ]
 
 

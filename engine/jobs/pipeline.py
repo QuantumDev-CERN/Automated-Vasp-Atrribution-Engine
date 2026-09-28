@@ -18,6 +18,11 @@ from ..adapters.base import Chain, ChainAdapter
 from ..graph.builder import TxGraph, expand_address
 from ..graph.store import GraphStore
 from ..intel.sanctions import SanctionsList
+from ..intel.mixer_correlation import (
+    CAVEAT as MIXER_CORRELATION_CAVEAT,
+    MixerWithdrawalCandidate,
+    correlate_mixer_withdrawals,
+)
 from ..intel.otc import OTC_TERMINUS_TAG, detect_otc_termini, registry_contains
 from ..report import (
     InvestigationReport, ReportInput, build_report,
@@ -107,6 +112,7 @@ class TraceResult:
     drafted_request: str
     report: InvestigationReport
     cross_chain: tuple = ()  # M21: CrossChainContinuation records
+    mixer_correlation: tuple = ()  # M22: MixerWithdrawalCandidate records
 
 
 def make_adapter(chain: str) -> ChainAdapter:
@@ -297,6 +303,23 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
             print(f"[bridge] continuation {b.dest_chain}:"
                   f"{b.dest_address[:12]}… -> {sub.terminal_reason}")
 
+    # M22: mixer correlation — probabilistic withdrawal candidates for a
+    # mixer-deposit terminal. Best-effort, bounded, and a failure never
+    # fails the primary trace. Candidates are leads, not attribution.
+    mixer_correlation: list[MixerWithdrawalCandidate] = []
+    if terminal_reason == "mixer-deposit":
+        for md in result.mixer_deposits:
+            if terminal_address and md.pool.lower() != terminal_address.lower():
+                continue
+            try:
+                mixer_correlation.extend(await correlate_mixer_withdrawals(
+                    md, graph, deps.adapter_factory(md.chain)))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[mixer] correlation for {md.pool[:12]}… "
+                      f"failed: {exc}")
+            print(f"[mixer] {len(mixer_correlation)} withdrawal candidate(s) "
+                  f"for {md.pool[:12]}…")
+
     terminal_vasp = route = None
     drafted_request = ""
     if terminal_address:
@@ -337,6 +360,7 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         bridge_deposits=tuple(result.bridge_deposits),
         swap_deposits=tuple(result.swap_deposits),
         cross_chain=tuple(cross_chain),
+        mixer_correlation=tuple(mixer_correlation),
         cross_case=cross_case_brief,
         calibration_version=attribution.calibration_version or ""))
 
@@ -347,4 +371,5 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         sanctions_hits=tuple(sanctions_hits),
         terminal_vasp=terminal_vasp, route=route,
         drafted_request=drafted_request, report=report,
-        cross_chain=tuple(cross_chain))
+        cross_chain=tuple(cross_chain),
+        mixer_correlation=tuple(mixer_correlation))
