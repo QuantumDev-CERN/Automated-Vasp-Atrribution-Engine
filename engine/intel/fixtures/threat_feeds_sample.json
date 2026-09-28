@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "extracted": "2026-09-28",
+    "scamsniffer_url": "https://raw.githubusercontent.com/scamsniffer/scam-database/main/blacklist/all.json",
+    "scamsniffer_note": "all.json is the live file; blacklist/address.json is FROZEN since 2024-02-28 and must not be used",
+    "ransomwhere_url": "https://api.ransomwhe.re/export",
+    "ransomwhere_note": "crowdsourced dataset; accuracy not independently verified (publisher FAQ)",
+    "note": "small sample of REAL entries; full ingestion via parse_*_file on a downloaded copy"
+  },
+  "scamsniffer": [
+    "0x000000002651a7206f8d7a23fe4410edf16dbec3",
+    "0x000000009b0e0800549dba4210a24eabbc93f9ef",
+    "0x00000002846f5f08a0b9bc34ed34c0b5e77f4a98",
+    "0x0000000d5377bff1cb2e310362d0bbec826fb425",
+    "0x0000000dc3d9e17e3449e59bb75cb4005ee8aa7f",
+    "0x0000000f7e71bfbcdae6d29aa49ed557afaef9d2",
+    "0x000000b0fc5292c824cfaad9eea42b8040c33eeb",
+    "0x0000010e3cb01bcdc1c70fb1e0e7a06a6d580000",
+    "0x000001c4e699f4a1393914a87a62c4c0afa00000",
+    "0x000006d683610e61ad9ee4b487fae3904b392b9e",
+    "0x000008224baff10562ca3c1f4c4870a0becd4d17",
+    "0x000008a68d2f43dd0c5958067735cd876f1a4d1c"
+  ],
+  "ransomwhere": [
+    {
+      "address": "17TMc2UkVRSga2yYvuxSD9Q1XyB2EPRjTF",
+      "family": "Netwalker (Mailto)"
+    },
+    {
+      "address": "1DTE5x3Rjn2q75HjX6hiu8CQwEGqe6wQ4s",
+      "family": "Netwalker (Mailto)"
+    },
+    {
+      "address": "3KmK5z4CAvn3aL4Q8F2gWbhuPRy9ZmEurN",
+      "family": "Qlocker"
+    },
+    {
+      "address": "1C7FeXMf18mGrcF59DJTkmxnRfkKeG1KFZ",
+      "family": "Netwalker (Mailto)"
+    },
+    {
+      "address": "3PDfzkTnD1E7gB7peZ2prRyDxjQ1BhqcV1",
+      "family": "Qlocker"
+    },
+    {
+      "address": "3LLzycFNFh7mDsqRhfknfGBa6TKq6HcfwS",
+      "family": "Qlocker"
+    },
+    {
+      "address": "37m57HiP5rPceopgEWF9sM58CkzaDFYtaU",
+      "family": "Qlocker"
+    },
+    {
+      "address": "18x7PieotZcmMwYSaYbbV8X3zBMentd5Fu",
+      "family": "Netwalker (Mailto)"
+    },
+    {
+      "address": "3Gwz3yVmrGr5AqmUrAS8H2QQaPz2v9Rhpx",
+      "family": "Qlocker"
+    },
+    {
+      "address": "1Kcwserp7KqSMYBDe6Ra5atHP6xWbQPBnD",
+      "family": "Netwalker (Mailto)"
+    },
+    {
+      "address": "1GuPsTqJjib8t2idTaLwa95kRLtiWhrE5A",
+      "family": "Netwalker (Mailto)"
+    },
+    {
+      "address": "3EWRngsRDhCxMHtKxeK6k9kX3pyWZSA2YB",
+      "family": "Qlocker"
+    }
+  ]
+}

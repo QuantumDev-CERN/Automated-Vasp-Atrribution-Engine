@@ -19,6 +19,7 @@ from ..graph.builder import TxGraph, expand_address
 from ..graph.store import GraphStore
 from ..intel.sanctions import SanctionsList
 from ..intel.structuring import StructuringFinding, analyze_structuring
+from ..intel.threat_feeds import ThreatFeedList, ThreatRecord
 from ..intel.mixer_correlation import (
     CAVEAT as MIXER_CORRELATION_CAVEAT,
     MixerWithdrawalCandidate,
@@ -64,6 +65,8 @@ class PipelineDeps:
     """Injectable seams: tests pass fakes, the worker passes real ones."""
     adapter_factory: Callable[[str], ChainAdapter]
     sanctions: Optional[SanctionsList] = None
+    # M24: scam/ransomware feed list; None = skip feed checks.
+    threat_feeds: Optional[ThreatFeedList] = None
     # terminal address -> VASP directory label (address->VASP clustering
     # is future work; default resolves nothing rather than guessing)
     vasp_resolver: Callable[[str], Optional[str]] = (
@@ -115,6 +118,7 @@ class TraceResult:
     cross_chain: tuple = ()  # M21: CrossChainContinuation records
     mixer_correlation: tuple = ()  # M22: MixerWithdrawalCandidate records
     structuring_findings: tuple = ()  # M23: StructuringFinding records
+    threat_hits: tuple = ()  # M24: (address, ThreatRecord) pairs
 
 
 def make_adapter(chain: str) -> ChainAdapter:
@@ -256,6 +260,14 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
             if deps.sanctions.lookup(node.address):
                 sanctions_hits.append(node.address)
 
+    # M24: direct hits against the scam/ransomware feeds, for every
+    # address on the traced path.
+    threat_hits: list[tuple[str, ThreatRecord]] = []
+    if deps.threat_feeds is not None:
+        for node in path:
+            for rec in deps.threat_feeds.lookup(node.address):
+                threat_hits.append((node.address, rec))
+
     # M21: explicit bridge destinations (parsed from lock calldata).
     explicit_locks = [b for b in result.bridge_deposits
                       if b.direction == "lock" and b.dest_address]
@@ -297,7 +309,8 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
 
     risk = score_risk(path, terminal_reason=terminal_reason,
                       sanctions_hits=tuple(sanctions_hits),
-                      structuring_findings=tuple(structuring_findings))
+                      structuring_findings=tuple(structuring_findings),
+                      threat_hits=tuple(threat_hits))
 
     # M21: destination-chain continuation. For each lock with an
     # explicitly parsed, adapter-supported destination, run one bounded
@@ -401,4 +414,5 @@ async def run_trace_pipeline(address: str, chain: str, case: CaseDetails,
         drafted_request=drafted_request, report=report,
         cross_chain=tuple(cross_chain),
         mixer_correlation=tuple(mixer_correlation),
-        structuring_findings=tuple(structuring_findings))
+        structuring_findings=tuple(structuring_findings),
+        threat_hits=tuple(threat_hits))

@@ -41,7 +41,8 @@ def score_risk(visited: list,
                terminal_reason: str | None = None,
                terminal_vasp_registered: bool | None = None,
                sanctions_hits: tuple[str, ...] = (),
-               structuring_findings: tuple = ()) -> RiskScore:
+               structuring_findings: tuple = (),
+               threat_hits: tuple = ()) -> RiskScore:
     """Score risk for one traced path.
 
     visited: TraversalResult.visited.
@@ -52,6 +53,9 @@ def score_risk(visited: list,
         (OFAC SDN via engine/intel). A direct hit is severe.
     structuring_findings: StructuringFinding records from
         engine/intel/structuring.py (M23). Each becomes its own signal.
+    threat_hits: (address, ThreatRecord) pairs from
+        engine/intel/threat_feeds.py (M24). One signal per address;
+        multiple records for the same address are merged into it.
     """
     signals: list[RiskSignal] = []
     kinds = [getattr(n, "via_kind", "") for n in visited]
@@ -129,6 +133,28 @@ def score_risk(visited: list,
                 f"{f.round_number:g} {f.asset_symbol} mark "
                 f"({addr}, {f.window_hours:g}h window) — classic "
                 "threshold-evasion signature"))
+
+    # M24: one signal per threat-listed address; merge multiple
+    # records (e.g. several ransomware families) into the reason.
+    by_address: dict[str, list] = {}
+    for addr, rec in threat_hits:
+        by_address.setdefault(addr, []).append(rec)
+    for addr, recs in by_address.items():
+        short = addr[:12] + "…"
+        if any(r.category == "ransomware" for r in recs):
+            fams = sorted({r.label for r in recs if r.label})
+            signals.append(RiskSignal(
+                "ransomware-direct-hit", 40,
+                f"{short} appears in the Ransomwhere crowdsourced "
+                f"ransomware-payment dataset (family: "
+                f"{', '.join(fams) or 'unlabeled'}) — crowdsourced "
+                "lead, accuracy not independently verified"))
+        elif any(r.category == "scam" for r in recs):
+            signals.append(RiskSignal(
+                "scam-direct-hit", 25,
+                f"{short} appears in the ScamSniffer community "
+                "scam/phishing/drainer blacklist — community intel, "
+                "not an authoritative finding"))
 
     total = min(100, sum(s.points for s in signals))
     return RiskScore(total=total, level=_level(total),

@@ -50,6 +50,8 @@ STAGES_LIVE = [
      [sys.executable, "scripts/smoke_m22.py"]),
     ("live: structuring/smurfing signals smoke M23",
      [sys.executable, "scripts/smoke_m23.py"]),
+    ("live: scam/ransomware feed ingestion smoke M24",
+     [sys.executable, "scripts/smoke_m24.py"]),
 ]
 
 
