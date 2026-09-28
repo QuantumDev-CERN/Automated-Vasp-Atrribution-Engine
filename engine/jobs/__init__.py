@@ -1,5 +1,6 @@
 """Async jobs (M7): trace pipeline, queue abstraction."""
 from .pipeline import (
+    ExpansionError,
     PipelineDeps,
     TraceResult,
     make_adapter,
@@ -8,6 +9,7 @@ from .pipeline import (
 from .queue import ArqQueue, MemoryQueue, Queue, init_queue
 
 __all__ = [
+    "ExpansionError",
     "PipelineDeps",
     "TraceResult",
     "make_adapter",

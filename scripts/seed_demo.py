@@ -415,6 +415,13 @@ DEMO_USERS: list[dict] = [
 
 MAX_CONCURRENCY = 3
 MAX_ATTEMPTS = 3
+
+# Cases the engine must not trace: their on-chain neighborhood fans out
+# beyond practical bounds (60+ sequential indexer calls, no completion
+# within the trace timeout). They are attributed directly from their
+# public threat-feed source by scripts/feed_attribute_0047.py instead,
+# with the methodology labeled honestly as feed-attributed.
+_FEED_ATTRIBUTED = {"EVAL/2026/0047"}
 # M28: baseline tick learns only the N most recent txs; the catch-up
 # tick runs the normal window so the address's real recent history
 # surfaces as the watch's initial alerts (documented in the module
@@ -450,6 +457,12 @@ async def _seed_case(ctx, spec, sem):
 
         if await store.get_report_by_case(case.id) is not None:
             print(f"[{spec['eval_id']}] report exists — skipping trace",
+                  flush=True)
+            return ("skipped", spec["eval_id"])
+
+        if spec["eval_id"] in _FEED_ATTRIBUTED:
+            print(f"[{spec['eval_id']}] feed-attributed case — skipping "
+                  f"engine trace (run scripts/feed_attribute_0047.py)",
                   flush=True)
             return ("skipped", spec["eval_id"])
 
@@ -679,6 +692,17 @@ async def _amain(args) -> int:
     n_failed = sum(1 for s, _ in results if s == "failed")
     print(f"done in {time.time() - t0:.0f}s: {n_traced} traced, "
           f"{n_skipped} skipped (already seeded), {n_failed} failed")
+
+    # Population quality summary: transactions / hops / topology per
+    # case, so the run is audited on data richness, not just counts.
+    try:
+        from scripts.population_report import (
+            collect_population, format_summary)
+        _, pop = await collect_population(store, graph_store)
+        print("population quality:")
+        print(format_summary(pop), end="")
+    except Exception as exc:  # noqa: BLE001 — summary never fails seed
+        print(f"(population summary unavailable: {exc})")
 
     engine = getattr(store, "engine", None)
     if engine is not None:

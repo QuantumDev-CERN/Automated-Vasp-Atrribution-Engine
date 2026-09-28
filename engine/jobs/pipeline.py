@@ -14,6 +14,9 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
+import asyncio
+import logging
+
 from ..adapters.base import Chain, ChainAdapter
 from ..graph.builder import TxGraph, expand_address
 from ..graph.store import GraphStore
@@ -39,6 +42,8 @@ from ..vasp import (
     CaseDetails, LegalInstrument, RouteRecommendation, VaspRecord,
     find_vasp, recommend_and_draft,
 )
+
+log = logging.getLogger(__name__)
 
 # terminal preference when several exist: deepest hop wins, ties broken
 # by how actionable the terminal is for an investigator
@@ -148,6 +153,41 @@ def make_adapter(chain: str) -> ChainAdapter:
     return with_indexer_cache(adapter)
 
 
+class ExpansionError(Exception):
+    """The subject address's own expansion failed after retries.
+
+    Raised instead of fabricating an empty dead-end: a trace with no
+    graph data at all is a failed trace, not a confident finding. The
+    seed retries the whole trace; only persistent failure leaves the
+    case without a report, which is the honest outcome.
+    """
+
+
+_EXPAND_ATTEMPTS = 3  # per-address retries before giving up
+
+
+async def _expand_one(graph: TxGraph, adapter: ChainAdapter,
+                      address: str) -> None:
+    """Expand one address with bounded retries and backoff.
+
+    Indexer rate limits are transient; a single failed call must not
+    decide the trace. Raises ExpansionError when all attempts fail.
+    """
+    last: Optional[Exception] = None
+    for attempt in range(1, _EXPAND_ATTEMPTS + 1):
+        try:
+            await expand_address(graph, adapter, address, limit=25)
+            return
+        except Exception as exc:  # noqa: BLE001 — retried, then raised
+            last = exc
+            log.warning("[expand] %s attempt %d/%d failed: %r",
+                        address, attempt, _EXPAND_ATTEMPTS, exc)
+            await asyncio.sleep(2 ** (attempt - 1))
+    raise ExpansionError(
+        f"expand {address} failed after {_EXPAND_ATTEMPTS} attempts: "
+        f"{last!r}")
+
+
 async def _expand(graph: TxGraph, adapter: ChainAdapter, start: str,
                   deps: PipelineDeps) -> None:
     seen = {start}
@@ -157,9 +197,16 @@ async def _expand(graph: TxGraph, adapter: ChainAdapter, start: str,
         if depth > deps.max_expand_hops:
             continue
         try:
-            await expand_address(graph, adapter, address, limit=25)
-        except Exception:
-            continue  # one bad address must not kill the whole trace
+            await _expand_one(graph, adapter, address)
+        except ExpansionError:
+            if address == start:
+                # The subject itself never expanded: the graph is empty
+                # and any "dead-end" verdict would be fabricated.
+                # Fail the trace so the caller retries honestly.
+                raise
+            log.warning("[expand] skipping %s after retries; continuing "
+                        "with partial graph", address)
+            continue
         if depth == deps.max_expand_hops:
             continue
         if address not in graph.g:
