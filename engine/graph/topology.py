@@ -204,6 +204,11 @@ def trace_path(
                 "asset_symbol": attrs.get("asset_symbol"),
                 "asset_contract": attrs.get("asset_contract"),
                 "block_time": attrs.get("block_time"),
+                # Classifier stamps written at trace time (durable for
+                # every traced case, unlike meta.hops which is M26+).
+                "hop_kind": attrs.get("hop_kind"),
+                "hop_confidence": attrs.get("hop_confidence"),
+                "hop_reason": attrs.get("hop_reason"),
             })
         hops.append(hop)
     return hops

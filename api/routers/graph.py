@@ -7,6 +7,7 @@
   GET /intel/infrastructure/{tag}   — common-infrastructure pivot (M9)
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from typing import Any, Optional
 
 from api.core.auth import (
     assert_case_access, get_current_user, require_cap,
@@ -98,9 +99,20 @@ async def graph_stats(case_id: str, request: Request,
     meta = await store.case_meta(case_id) or {}
     hops = meta.get("hops") or []
     breakdown: dict[str, int] = {}
-    for h in hops:
-        kind = h.get("kind") or "unknown"
-        breakdown[kind] = breakdown.get(kind, 0) + 1
+    # M38: count the classifier's per-edge hop_kind stamps across the
+    # whole graph (written at trace time for every case) — this is the
+    # true classifier breakdown, not just the few path hops in meta.
+    graph = await store.load_case_subgraph(case_id)
+    if graph is not None:
+        for _s, _d, _k, attrs in graph.g.edges(keys=True, data=True):
+            kind = _display_kind(attrs.get("hop_kind")) or "unknown"
+            breakdown[kind] = breakdown.get(kind, 0) + 1
+    if not breakdown:
+        # Graph unavailable — fall back to the persisted hop path
+        # (M26+ cases).
+        for h in hops:
+            kind = _display_kind(h.get("kind")) or "unknown"
+            breakdown[kind] = breakdown.get(kind, 0) + 1
     out["classifier_breakdown"] = breakdown
     out["daily_activity"] = await _daily_activity(store, case_id, days=days)
     out["activity_days"] = days
@@ -139,6 +151,24 @@ async def _daily_activity(store, case_id: str,
             for day, b in sorted(buckets.items())]
 
 
+# M38: the classifier's HopKind enum values predate the workbench's
+# display contract. Normalize to the keys the frontend renders
+# (peel/sweep/mixer-deposit/bridge/...) so both meta.hops and the
+# edge-stamp fallback produce countable, displayable kinds.
+_DISPLAY_KIND = {
+    "sweep-candidate": "sweep",
+    "bridge-lock": "bridge",
+    "direct-transfer": "direct",
+    "dex-swap": "swap",
+}
+
+
+def _display_kind(raw: Any) -> Optional[str]:
+    if not raw:
+        return None
+    return _DISPLAY_KIND.get(str(raw), str(raw))
+
+
 @router.get("/cases/{case_id}/graph/path")
 async def graph_path(case_id: str, request: Request,
                      user: ApiUserRec = Depends(get_current_user)) -> dict:
@@ -159,17 +189,25 @@ async def graph_path(case_id: str, request: Request,
         raise HTTPException(404, "no path from subject to terminal in graph")
     # M26: join the pipeline's persisted hop classifications (kind +
     # confidence) onto the topological path by address.
+    # M38: fall back to the classifier stamps on the edges themselves
+    # (hop_kind/hop_confidence/hop_reason) — written at trace time for
+    # every case, so pre-M26 cases without meta.hops still get per-hop
+    # kind, confidence, and reason. Kinds are normalized to the
+    # workbench's display contract (sweep-candidate -> sweep, ...).
     kinds = {h.get("address"): h for h in (meta.get("hops") or [])}
     enriched = []
     for hop in path:
         cls = kinds.get(hop.get("address"), {})
         enriched.append({**hop,
-                         "kind": cls.get("kind"),
-                         "confidence": cls.get("confidence"),
+                         "kind": (_display_kind(cls.get("kind"))
+                                  or _display_kind(hop.get("hop_kind"))),
+                         "confidence": (cls.get("confidence")
+                                        if cls.get("confidence") is not None
+                                        else hop.get("hop_confidence")),
                          # M36: surface the pipeline's persisted per-hop
                          # classifier note (honest provenance for the
                          # workbench selected-node panel).
-                         "reason": cls.get("note")})
+                         "reason": cls.get("note") or hop.get("hop_reason")})
     return {"case_id": case_id, "subject": meta["subject"],
             "terminal": meta["terminal"],
             "terminal_reason": meta.get("terminal_reason"),
