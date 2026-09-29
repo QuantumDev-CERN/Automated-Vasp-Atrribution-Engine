@@ -137,3 +137,55 @@ async def test_api_links_and_stats_and_infrastructure():
 
     assert client.get("/cases/nope/graph/stats").status_code == 404
     await store.close()
+
+
+# ---------- M41: batched cross-case primitives (N+1 -> 1 round trip) ----------
+
+async def test_cases_for_addresses_matches_singles():
+    store = await _two_linked_cases()
+    aids = ["ethereum:0xaaa", "ethereum:0xccc", "ethereum:0xzzz"]
+    batch = await store.cases_for_addresses(aids)
+    assert batch == {
+        "ethereum:0xaaa": ["case-A"],
+        "ethereum:0xccc": ["case-A", "case-B"],
+        "ethereum:0xzzz": [],
+    }
+    for aid in aids:
+        chain, _, addr = aid.partition(":")
+        assert batch[aid] == await store.cases_for_address(addr, chain)
+    await store.close()
+
+
+async def test_tags_for_addresses_matches_singles():
+    store = await _two_linked_cases()
+    aids = ["ethereum:0xccc", "ethereum:0xaaa"]
+    batch = await store.tags_for_addresses(aids)
+    assert [t["tag"] for t in batch["ethereum:0xccc"]] == ["mixer-deposit"]
+    assert batch["ethereum:0xaaa"] == []
+    for aid in aids:
+        chain, _, addr = aid.partition(":")
+        assert batch[aid] == await store.address_tags(addr, chain)
+    await store.close()
+
+
+async def test_batch_primitives_empty_input():
+    store = MemoryGraphStore()
+    assert await store.cases_for_addresses([]) == {}
+    assert await store.tags_for_addresses([]) == {}
+    await store.close()
+
+
+async def test_find_case_links_dedupes_multi_chain_address():
+    """Same address on two chains still links once (M41 parity)."""
+    store = MemoryGraphStore()
+    g1 = TxGraph()
+    g1.add_tx(_tx("0xh1", "0xaaa", "0xccc"))
+    g1.g.nodes["0xccc"]["chains"] = {"ethereum", "bitcoin"}
+    await store.save_case_subgraph("case-A", g1)
+    g2 = TxGraph()
+    g2.add_tx(_tx("0xh2", "0xccc", "0xddd"))
+    await store.save_case_subgraph("case-B", g2)
+    links = await find_case_links("case-A", store)
+    assert links.linked_case_ids == ["case-B"]
+    assert links.links[0].shared_addresses == ["0xccc"]
+    await store.close()

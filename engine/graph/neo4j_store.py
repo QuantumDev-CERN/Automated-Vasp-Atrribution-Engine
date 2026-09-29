@@ -213,6 +213,43 @@ class Neo4jGraphStore(GraphStore):
             )
             return [r["cid"] for r in rows]
 
+    async def cases_for_addresses(
+        self, aids: list[str]
+    ) -> dict[str, list[str]]:
+        """One UNWIND round trip instead of N cases_for_address calls."""
+        out: dict[str, list[str]] = {aid: [] for aid in aids}
+        if not aids:
+            return out
+        with self._session() as s:
+            rows = s.run(
+                "UNWIND $aids AS aid "
+                "MATCH (c:Case)-[:INCLUDES]->(a:Address {id: aid}) "
+                "RETURN aid AS aid, collect(DISTINCT c.id) AS cids",
+                aids=aids,
+            )
+            for r in rows:
+                out[r["aid"]] = sorted(r["cids"])
+        return out
+
+    async def tags_for_addresses(
+        self, aids: list[str]
+    ) -> dict[str, list[dict[str, str]]]:
+        """One UNWIND round trip instead of N address_tags calls."""
+        out: dict[str, list[dict[str, str]]] = {aid: [] for aid in aids}
+        if not aids:
+            return out
+        with self._session() as s:
+            rows = s.run(
+                "UNWIND $aids AS aid "
+                "MATCH (a:Address {id: aid})-[r:TAGGED]->(t:Tag) "
+                "RETURN aid AS aid, collect({tag: t.name, source: r.source, "
+                "case_id: r.case_id, at: r.at}) AS tags",
+                aids=aids,
+            )
+            for r in rows:
+                out[r["aid"]] = [dict(t) for t in r["tags"]]
+        return out
+
     async def addresses_with_tag(self, tag: str) -> list[dict[str, str]]:
         with self._session() as s:
             rows = s.run(

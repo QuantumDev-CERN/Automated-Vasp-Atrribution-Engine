@@ -82,6 +82,24 @@ class MemoryGraphStore(GraphStore):
     ) -> list[str]:
         return sorted(self._addr_cases.get((chain, address), set()))
 
+    async def cases_for_addresses(
+        self, aids: list[str]
+    ) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for aid in aids:
+            chain, _, address = aid.partition(":")
+            out[aid] = sorted(self._addr_cases.get((chain, address), set()))
+        return out
+
+    async def tags_for_addresses(
+        self, aids: list[str]
+    ) -> dict[str, list[dict[str, str]]]:
+        out: dict[str, list[dict[str, str]]] = {}
+        for aid in aids:
+            chain, _, address = aid.partition(":")
+            out[aid] = [dict(e) for e in self._tags.get((chain, address), [])]
+        return out
+
     async def addresses_with_tag(self, tag: str) -> list[dict[str, str]]:
         out = []
         for (chain, address), entries in self._tags.items():

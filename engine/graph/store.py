@@ -141,6 +141,21 @@ class GraphStore(abc.ABC):
         M9's syndicate correlation is built on."""
 
     @abc.abstractmethod
+    async def cases_for_addresses(self, aids: list[str]) -> dict[str, list[str]]:
+        """Batch cases_for_address in ONE round trip: {address_id} ->
+        sorted case ids, where address_id is f"{chain}:{address}".
+        M41: the per-address loop in find_case_links / the intel feed
+        froze the API on remote Neo4j (hundreds of sequential sync
+        round trips); batched primitives keep it to a couple."""
+
+    @abc.abstractmethod
+    async def tags_for_addresses(
+        self, aids: list[str]
+    ) -> dict[str, list[dict[str, str]]]:
+        """Batch address_tags in ONE round trip: {address_id} -> tag
+        entries ([{tag, source, ...}], same shape as address_tags)."""
+
+    @abc.abstractmethod
     async def addresses_with_tag(self, tag: str) -> list[dict[str, str]]:
         """[{address, chain}] every address carrying a tag, any case."""
 

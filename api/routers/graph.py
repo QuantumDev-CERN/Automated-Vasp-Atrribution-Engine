@@ -333,10 +333,11 @@ async def ranked_entities(request: Request,
         if not addrs:
             continue
         case_ids: set[str] = set()
-        for a in addrs[:200]:  # bounded: case overlap is a pivot, not a scan
-            for cid in await store.cases_for_address(a["address"],
-                                                     a["chain"]):
-                case_ids.add(cid)
+        # M41: one batched lookup instead of a per-address round trip
+        # (bounded: case overlap is a pivot, not a scan)
+        aids = [f"{a['chain']}:{a['address']}" for a in addrs[:200]]
+        for cids in (await store.cases_for_addresses(aids)).values():
+            case_ids.update(cids)
         # M12: case counts never leak cases outside the caller's scope.
         visible_cases = []
         for cid in sorted(case_ids):

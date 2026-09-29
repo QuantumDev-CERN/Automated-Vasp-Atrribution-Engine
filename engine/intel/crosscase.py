@@ -54,22 +54,43 @@ async def find_case_links(
 
     Ranked by overlap descending. Shared addresses carry their
     provenance tags so the investigator sees *why* two cases link.
+
+    M41: was 1 + N + M sequential store round trips (one per address);
+    now 3 total via the batched primitives — the per-address loop
+    froze the API on remote Neo4j.
     """
     graph = await store.load_case_subgraph(case_id)
     if graph is None:
         return CaseLinks(case_id=case_id)
 
-    per_case: dict[str, LinkedCase] = {}
+    # addr -> aids (f"{chain}:{address}"), preserving the original
+    # multi-chain expansion.
+    addr_aids: dict[str, list[str]] = {}
     for addr in graph.addresses():
         chains = graph.g.nodes[addr].get("chains") or {"unknown"}
-        for chain in chains:
-            for other in await store.cases_for_address(addr, chain):
+        addr_aids[addr] = [f"{chain}:{addr}" for chain in chains]
+    cases_map = await store.cases_for_addresses(
+        [aid for aids in addr_aids.values() for aid in aids]
+    )
+
+    per_case: dict[str, LinkedCase] = {}
+    for addr, aids in addr_aids.items():
+        for aid in aids:
+            for other in cases_map.get(aid, []):
                 if other == case_id:
                     continue
                 lc = per_case.setdefault(
                     other, LinkedCase(case_id=other))
                 if addr not in lc.shared_addresses:
                     lc.shared_addresses.append(addr)
+
+    shared_addrs = {
+        addr for lc in per_case.values() for addr in lc.shared_addresses
+    }
+    tags_map = await store.tags_for_addresses(
+        [aid for addr in shared_addrs for aid in addr_aids[addr]]
+    )
+
     result = CaseLinks(case_id=case_id)
     for lc in per_case.values():
         if lc.overlap < min_overlap:
@@ -77,11 +98,10 @@ async def find_case_links(
         lc.shared_addresses.sort()
         # attach tags for the shared addresses (explanation, not just ids)
         for addr in lc.shared_addresses:
-            chains = graph.g.nodes[addr].get("chains") or {"unknown"}
             tags: list[str] = []
-            for chain in chains:
+            for aid in addr_aids[addr]:
                 tags.extend(
-                    t["tag"] for t in await store.address_tags(addr, chain))
+                    t["tag"] for t in tags_map.get(aid, []))
             if tags:
                 lc.shared_tags[addr] = sorted(set(tags))
         result.links.append(lc)
@@ -98,11 +118,15 @@ async def shared_infrastructure(
 
     Returns {address: [case_ids]} — e.g. tag="mixer-deposit" shows which
     cases funneled through the same mixer deposit wallets.
+
+    M41: was 1 + N sequential round trips; now 2 via cases_for_addresses.
     """
     out: dict[str, list[str]] = {}
-    for entry in await store.addresses_with_tag(tag):
-        addr, chain = entry["address"], entry["chain"]
-        out[addr] = await store.cases_for_address(addr, chain)
+    entries = await store.addresses_with_tag(tag)
+    aids = [f"{e['chain']}:{e['address']}" for e in entries]
+    cases_map = await store.cases_for_addresses(aids)
+    for entry, aid in zip(entries, aids):
+        out[entry["address"]] = sorted(cases_map.get(aid, []))
     return dict(sorted(out.items()))
 
 
