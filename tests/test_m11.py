@@ -123,3 +123,12 @@ async def test_case_meta_round_trip_memory():
     meta = await store.case_meta("c")
     assert meta["subject"] == "0xsub"
     assert await store.case_meta("absent") is None
+
+
+async def test_topology_denominates_base_units():
+    """Satoshis/wei must not be served raw next to a coin symbol."""
+    from engine.graph.topology import _denominate
+    assert _denominate("16397529", 8) == "0.16397529"
+    assert _denominate("1800000000000000000", 18) == "1.8"
+    assert _denominate("100", None) == "100"  # unknown decimals: unchanged
+    assert _denominate("not-a-number", 8) == "not-a-number"

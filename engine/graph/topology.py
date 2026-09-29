@@ -15,6 +15,29 @@ from typing import Any, Optional
 from .builder import TxGraph
 
 
+def _denominate(raw_value: str, decimals: Any) -> str:
+    """Human-denominated value string for display.
+
+    Base units (satoshis, wei) are unreadable next to a coin symbol
+    ("16397529 BTC"). When the asset's decimals are known, divide into
+    coin units; otherwise return the raw value unchanged.
+    """
+    try:
+        units = int(raw_value)
+    except (TypeError, ValueError):
+        return raw_value
+    try:
+        d = int(decimals)
+    except (TypeError, ValueError):
+        return raw_value
+    if d < 0:
+        return raw_value
+    from decimal import Decimal
+    coin = Decimal(units) / (Decimal(10) ** d)
+    # Plain fixed-point notation, no scientific exponents.
+    return format(coin, "f")
+
+
 async def graph_topology(
     graph: TxGraph,
     store=None,
@@ -52,14 +75,17 @@ async def graph_topology(
     for src, dst, _key, a in g.edges(keys=True, data=True):
         if src not in kept_set or dst not in kept_set:
             continue
+        raw_value = str(a.get("value"))
         edges.append({
             "src": src,
             "dst": dst,
             "tx_hash": a.get("tx_hash"),
-            "value": str(a.get("value")),
+            "value": raw_value,
+            "value_denominated": _denominate(raw_value, a.get("asset_decimals")),
             "asset_kind": a.get("asset_kind"),
             "asset_symbol": a.get("asset_symbol"),
             "asset_contract": a.get("asset_contract"),
+            "asset_decimals": a.get("asset_decimals"),
             "block_time": a.get("block_time"),
             "block_number": a.get("block_number"),
         })
@@ -114,9 +140,11 @@ def trace_path(
         hop: dict[str, Any] = {"hop": i, "address": addr}
         if i > 0:
             _parent, attrs = prev[addr]
+            raw_hop_value = str(attrs.get("value"))
             hop.update({
                 "via_tx": attrs.get("tx_hash"),
-                "value": str(attrs.get("value")),
+                "value": raw_hop_value,
+                "value_denominated": _denominate(raw_hop_value, attrs.get("asset_decimals")),
                 "asset_symbol": attrs.get("asset_symbol"),
                 "asset_contract": attrs.get("asset_contract"),
                 "block_time": attrs.get("block_time"),
