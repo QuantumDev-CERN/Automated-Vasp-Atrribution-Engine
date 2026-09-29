@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "vasp-dev-password"
+    neo4j_database: str = ""  # empty = server default; AuraDB needs "neo4j"
     redis_url: str = "redis://localhost:6379/0"
 
     # mock SAHYOG

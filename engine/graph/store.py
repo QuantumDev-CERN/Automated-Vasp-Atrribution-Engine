@@ -167,6 +167,7 @@ def get_graph_store() -> GraphStore:
             uri=settings.neo4j_uri,
             user=settings.neo4j_user,
             password=settings.neo4j_password,
+            database=settings.neo4j_database,
         )
         store.ping()
         print(f"[graph] Neo4j store: {settings.neo4j_uri}")

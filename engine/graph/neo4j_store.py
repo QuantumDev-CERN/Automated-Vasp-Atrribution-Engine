@@ -27,18 +27,22 @@ from .store import GraphStore, _utcnow_iso, restore_graph, snapshot_graph
 
 
 class Neo4jGraphStore(GraphStore):
-    def __init__(self, uri: str, user: str, password: str) -> None:
+    def __init__(self, uri: str, user: str, password: str, database: str = "") -> None:
         from neo4j import GraphDatabase
 
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
+        self._database = database or None  # None = server default database
         self._ensure_constraints()
 
+    def _session(self):
+        return self._driver.session(database=self._database)
+
     def ping(self) -> None:
-        with self._driver.session() as s:
+        with self._session() as s:
             s.run("RETURN 1").single()
 
     def _ensure_constraints(self) -> None:
-        with self._driver.session() as s:
+        with self._session() as s:
             s.run(
                 "CREATE CONSTRAINT IF NOT EXISTS "
                 "FOR (a:Address) REQUIRE a.id IS UNIQUE"
@@ -90,7 +94,7 @@ class Neo4jGraphStore(GraphStore):
             }
             for src, dst, _key, a in graph.g.edges(keys=True, data=True)
         ]
-        with self._driver.session() as s:
+        with self._session() as s:
             s.run(
                 "MERGE (c:Case {id: $cid}) "
                 "SET c.saved_at = $at, c.snapshot = $snap, "
@@ -139,7 +143,7 @@ class Neo4jGraphStore(GraphStore):
         source: str,
         case_id: Optional[str] = None,
     ) -> None:
-        with self._driver.session() as s:
+        with self._session() as s:
             s.run(
                 "MERGE (a:Address {id: $aid}) "
                 "SET a.address = $addr, a.chain = $chain "
@@ -154,7 +158,7 @@ class Neo4jGraphStore(GraphStore):
     # ------------------------------------------------------------------ read
 
     async def load_case_subgraph(self, case_id: str) -> Optional[TxGraph]:
-        with self._driver.session() as s:
+        with self._session() as s:
             rec = s.run(
                 "MATCH (c:Case {id: $cid}) RETURN c.snapshot AS snap",
                 cid=case_id,
@@ -164,7 +168,7 @@ class Neo4jGraphStore(GraphStore):
         return restore_graph(json.loads(rec["snap"]))
 
     async def case_stats(self, case_id: str) -> Optional[dict[str, int]]:
-        with self._driver.session() as s:
+        with self._session() as s:
             rec = s.run(
                 "MATCH (c:Case {id: $cid}) "
                 "RETURN c.addresses AS a, c.transfers AS t, "
@@ -177,7 +181,7 @@ class Neo4jGraphStore(GraphStore):
                 "transactions": rec["x"] or 0}
 
     async def case_meta(self, case_id: str) -> Optional[dict[str, Any]]:
-        with self._driver.session() as s:
+        with self._session() as s:
             rec = s.run(
                 "MATCH (c:Case {id: $cid}) RETURN c.meta AS meta",
                 cid=case_id,
@@ -189,7 +193,7 @@ class Neo4jGraphStore(GraphStore):
     async def address_tags(
         self, address: str, chain: str
     ) -> list[dict[str, str]]:
-        with self._driver.session() as s:
+        with self._session() as s:
             rows = s.run(
                 "MATCH (a:Address {id: $aid})-[r:TAGGED]->(t:Tag) "
                 "RETURN t.name AS tag, r.source AS source, "
@@ -201,7 +205,7 @@ class Neo4jGraphStore(GraphStore):
     async def cases_for_address(
         self, address: str, chain: str
     ) -> list[str]:
-        with self._driver.session() as s:
+        with self._session() as s:
             rows = s.run(
                 "MATCH (c:Case)-[:INCLUDES]->(a:Address {id: $aid}) "
                 "RETURN DISTINCT c.id AS cid ORDER BY cid",
@@ -210,7 +214,7 @@ class Neo4jGraphStore(GraphStore):
             return [r["cid"] for r in rows]
 
     async def addresses_with_tag(self, tag: str) -> list[dict[str, str]]:
-        with self._driver.session() as s:
+        with self._session() as s:
             rows = s.run(
                 "MATCH (a:Address)-[:TAGGED]->(:Tag {name: $tag}) "
                 "RETURN DISTINCT a.address AS address, a.chain AS chain "
