@@ -61,6 +61,38 @@ async def graph_topology(
     kept_set = set(kept)
 
     nodes: list[dict[str, Any]] = []
+    # M37: mixer-pool display info for depositor nodes. A node labeled
+    # "mixer-depositor" deposited into one of the registry's known pools;
+    # find which pool via its outgoing edges so the workbench can show
+    # "Tornado Cash · 1 ETH pool" from persisted data alone.
+    mixer_pools: dict[str, dict[str, str]] = {}
+    try:
+        from ..knowledge.mixers import mixer_for
+        from ..adapters.base import Chain
+        for src, dst in g.edges():
+            if src in mixer_pools:
+                continue
+            for ch in (g.nodes[src].get("chains") or []):
+                try:
+                    info = mixer_for(Chain(ch), dst)
+                except Exception:
+                    info = None
+                if info is not None:
+                    try:
+                        eth = int(info.denomination) / 10**18
+                        denom = f"{eth:g} ETH"
+                    except (TypeError, ValueError):
+                        denom = info.denomination
+                    pretty = {"tornado-cash": "Tornado Cash"}.get(
+                        info.name, info.name.replace("-", " ").title())
+                    mixer_pools[src] = {
+                        "name": pretty,
+                        "denomination": denom,
+                        "display": f"{pretty} · {denom} pool",
+                    }
+                    break
+    except Exception:
+        mixer_pools = {}
     for addr in kept:
         nd = g.nodes[addr]
         first = nd.get("first_seen")
@@ -71,6 +103,8 @@ async def graph_topology(
             "first_seen": first.isoformat() if first else None,
             "degree": g.degree(addr),
         }
+        if addr in mixer_pools:
+            node["pool"] = mixer_pools[addr]
         if store is not None:
             tags: list[str] = []
             for chain in node["chains"] or ["unknown"]:

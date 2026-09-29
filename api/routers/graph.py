@@ -83,7 +83,8 @@ async def graph_topology_api(
 
 @router.get("/cases/{case_id}/graph/stats")
 async def graph_stats(case_id: str, request: Request,
-                      user: ApiUserRec = Depends(get_current_user)) -> dict:
+                      user: ApiUserRec = Depends(get_current_user),
+                      days: int = Query(30, ge=0, le=3650)) -> dict:
     await _assert_graph_case_access(request, user, case_id)
     store = _graph_store(request)
     stats = await store.case_stats(case_id)
@@ -93,6 +94,7 @@ async def graph_stats(case_id: str, request: Request,
     # M26: classifier breakdown from the persisted hop path + per-day
     # activity for the workbench chart. Both derive from data the
     # pipeline persisted — nothing is re-inferred here.
+    # M37: `days` scopes the activity window (0 = lifetime, no cutoff).
     meta = await store.case_meta(case_id) or {}
     hops = meta.get("hops") or []
     breakdown: dict[str, int] = {}
@@ -100,21 +102,23 @@ async def graph_stats(case_id: str, request: Request,
         kind = h.get("kind") or "unknown"
         breakdown[kind] = breakdown.get(kind, 0) + 1
     out["classifier_breakdown"] = breakdown
-    out["daily_activity"] = await _daily_activity(store, case_id)
+    out["daily_activity"] = await _daily_activity(store, case_id, days=days)
+    out["activity_days"] = days
     return out
 
 
 async def _daily_activity(store, case_id: str,
                           days: int = 30) -> list[dict]:
     """Per-day transaction/transfer counts for the last `days` days,
-    from the persisted graph's edge block_times (M26)."""
+    from the persisted graph's edge block_times (M26).
+    M37: days=0 means lifetime — no start cutoff."""
     from datetime import datetime, timedelta, timezone
 
     graph = await store.load_case_subgraph(case_id)
     if graph is None:
         return []
     now = datetime.now(timezone.utc)
-    start = (now - timedelta(days=days)).date()
+    start = (now - timedelta(days=days)).date() if days > 0 else None
     buckets: dict[str, dict[str, int | set]] = {}
     for _src, _dst, _key, attrs in graph.g.edges(keys=True, data=True):
         bt = attrs.get("block_time")
@@ -124,7 +128,7 @@ async def _daily_activity(store, case_id: str,
             day = datetime.fromisoformat(bt).date().isoformat()
         except ValueError:
             continue
-        if day < start.isoformat():
+        if start is not None and day < start.isoformat():
             continue
         b = buckets.setdefault(day, {"txs": set(), "transfers": 0})
         b["txs"].add(attrs.get("tx_hash"))
