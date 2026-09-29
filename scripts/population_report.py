@@ -28,7 +28,7 @@ def _row(case_id, chain, subject, method, txs, addrs, hops, terminal,
 async def collect_population(store, graph_store):
     """Per-case rows + summary dict. Shared by this script and the seed's
     end-of-run summary."""
-    cases = await store.list_cases(limit=500)
+    cases, _total = await store.list_cases(limit=500)
     eval_cases = sorted(
         (c for c in cases if (c.fir_number or "").startswith("EVAL/")),
         key=lambda c: c.fir_number)

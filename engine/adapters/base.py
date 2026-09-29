@@ -174,7 +174,9 @@ class ChainAdapter(ABC):
             except Exception as exc:  # noqa: BLE001 — retried below
                 last_exc = exc
                 await asyncio.sleep(2**attempt)
-        raise AdapterError(f"GET {url} failed after {retries} tries: {last_exc}")
+        raise AdapterError(
+            f"GET {url} failed after {retries} tries: "
+            f"{type(last_exc).__name__}: {last_exc}")
 
     async def close(self) -> None:
         await self._client.aclose()

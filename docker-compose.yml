@@ -36,6 +36,10 @@ services:
     build: .
     command: uvicorn integrations.sahyog_mock.mock_server:app --host 0.0.0.0 --port 8091
     ports: ["8091:8091"]
+    # M32: the mock verifies webhook HMACs against ENGINE_WEBHOOK_SECRET —
+    # it must share the .env with the engine, or every signed delivery
+    # gets a 401 and webhook_ok=False across the whole run.
+    env_file: [.env]
 
 volumes:
   pgdata:

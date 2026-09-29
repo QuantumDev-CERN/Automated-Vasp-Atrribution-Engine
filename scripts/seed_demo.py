@@ -661,6 +661,22 @@ async def _amain(args) -> int:
         return 2
     print(f"store: {type(store).__name__} (shared with the API)")
 
+    # M32 preflight: the seed calls trace_wallet in-process, which POSTs
+    # every attribution to the SAHYOG mock. If the mock isn't reachable,
+    # all 41 filings fail delivery silently — catch it in 5 seconds here
+    # instead of discovering webhook_ok=False after a 3-hour run.
+    _mock_url = settings.sahyog_mock_url.rstrip("/")
+    try:
+        import httpx
+        _r = httpx.get(_mock_url + "/sahyog/webhooks", timeout=5.0)
+        _r.raise_for_status()
+        print(f"SAHYOG mock: reachable at {_mock_url}")
+    except Exception as exc:  # noqa: BLE001 — preflight must not fail seed
+        print(f"WARNING: SAHYOG mock NOT reachable at {_mock_url} ({exc}). "
+              f"Continuing, but every filing's webhook delivery will fail "
+              f"(webhook_ok=False). Start it with: docker compose up -d "
+              f"sahyog-mock")
+
     graph_store = get_graph_store()
     print(f"graph store: {graph_store.backend}"
           + ("" if graph_store.backend == "neo4j"
