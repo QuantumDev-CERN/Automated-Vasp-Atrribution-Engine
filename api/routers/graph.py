@@ -119,6 +119,46 @@ async def graph_stats(case_id: str, request: Request,
     return out
 
 
+@router.get("/cases/{case_id}/graph/transactions")
+async def graph_transactions(case_id: str, request: Request,
+                             user: ApiUserRec = Depends(get_current_user),
+                             limit: int = Query(4, ge=1, le=100),
+                             offset: int = Query(0, ge=0)) -> dict:
+    """M39: recent transfers for the workbench, newest first, paginated.
+
+    Each item carries the classifier's edge stamps (kind/confidence/reason)
+    so the UI can describe transactions in words without re-inference.
+    Edges without a block_time sort last."""
+    await _assert_graph_case_access(request, user, case_id)
+    store = _graph_store(request)
+    graph = await store.load_case_subgraph(case_id)
+    if graph is None:
+        raise HTTPException(404, "no persisted graph for case")
+    items: list[dict] = []
+    for src, dst, _key, attrs in graph.g.edges(keys=True, data=True):
+        chains = graph.g.nodes[src].get("chains") or []
+        chain = next(iter(chains), None)  # chains may restore as a set
+        items.append({
+            "tx_hash": attrs.get("tx_hash"),
+            "src": src,
+            "dst": dst,
+            "chain": chain,
+            "value": attrs.get("value_denominated") or attrs.get("value"),
+            "asset_symbol": attrs.get("asset_symbol"),
+            "block_time": attrs.get("block_time"),
+            "kind": _display_kind(attrs.get("hop_kind")),
+            "confidence": attrs.get("hop_confidence"),
+            "reason": attrs.get("hop_reason"),
+        })
+    items.sort(key=lambda it: (it["block_time"] is not None,
+                               it["block_time"] or "",
+                               it["tx_hash"] or ""),
+               reverse=True)
+    total = len(items)
+    return {"case_id": case_id, "total": total, "limit": limit,
+            "offset": offset, "items": items[offset:offset + limit]}
+
+
 async def _daily_activity(store, case_id: str,
                           days: int = 30) -> list[dict]:
     """Per-day transaction/transfer counts for the last `days` days,
