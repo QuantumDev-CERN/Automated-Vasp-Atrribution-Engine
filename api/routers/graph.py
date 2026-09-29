@@ -57,15 +57,27 @@ async def graph_topology_api(
 ) -> dict:
     """Fund-flow topology for the dashboard: bounded nodes/edges JSON
     with address labels, tags, and per-transfer detail (M11)."""
-    from engine.graph.topology import graph_topology as build
+    from engine.graph.topology import graph_topology as build, trace_path
 
     await _assert_graph_case_access(request, user, case_id)
     store = _graph_store(request)
     graph = await store.load_case_subgraph(case_id)
     if graph is None:
         raise HTTPException(404, "no persisted graph for case")
+    # M36: pin the attribution path so degree-based truncation can never
+    # drop the subject -> terminal nodes or their edges from this response.
+    pins: set[str] = set()
+    meta = await store.case_meta(case_id)
+    if meta and meta.get("subject") and meta.get("terminal"):
+        try:
+            path = trace_path(graph, meta["subject"], meta["terminal"])
+        except Exception:
+            path = None
+        if path:
+            pins = {h.get("address") for h in path if h.get("address")}
     topo = await build(graph, store if with_tags else None,
-                       max_nodes=max_nodes, max_edges=max_edges)
+                       max_nodes=max_nodes, max_edges=max_edges,
+                       pin_addrs=pins)
     return {"case_id": case_id, **topo}
 
 
@@ -149,7 +161,11 @@ async def graph_path(case_id: str, request: Request,
         cls = kinds.get(hop.get("address"), {})
         enriched.append({**hop,
                          "kind": cls.get("kind"),
-                         "confidence": cls.get("confidence")})
+                         "confidence": cls.get("confidence"),
+                         # M36: surface the pipeline's persisted per-hop
+                         # classifier note (honest provenance for the
+                         # workbench selected-node panel).
+                         "reason": cls.get("note")})
     return {"case_id": case_id, "subject": meta["subject"],
             "terminal": meta["terminal"],
             "terminal_reason": meta.get("terminal_reason"),

@@ -44,12 +44,20 @@ async def graph_topology(
     *,
     max_nodes: int = 500,
     max_edges: int = 2000,
+    pin_addrs: "set[str] | None" = None,
 ) -> dict[str, Any]:
     """Bounded {nodes, edges} JSON. Nodes ranked by degree so truncation
-    keeps the most connected addresses, not arbitrary ones."""
+    keeps the most connected addresses, not arbitrary ones.
+
+    M36: `pin_addrs` (e.g. the attribution subject -> terminal path) always
+    survives truncation, and edges between pinned addresses are emitted
+    first, so the workbench path can never be silently dropped from a
+    truncated topology response."""
     g = graph.g
+    pins = {a for a in (pin_addrs or set()) if a in g.nodes}
     ranked = sorted(g.nodes, key=lambda n: g.degree(n), reverse=True)
-    kept = ranked[:max_nodes]
+    kept = list(pins) + [n for n in ranked if n not in pins][:max_nodes]
+    kept = kept[:max(max_nodes, len(pins))]
     kept_set = set(kept)
 
     nodes: list[dict[str, Any]] = []
@@ -72,11 +80,9 @@ async def graph_topology(
         nodes.append(node)
 
     edges: list[dict[str, Any]] = []
-    for src, dst, _key, a in g.edges(keys=True, data=True):
-        if src not in kept_set or dst not in kept_set:
-            continue
+    def _edge_row(src, dst, a):
         raw_value = str(a.get("value"))
-        edges.append({
+        return {
             "src": src,
             "dst": dst,
             "tx_hash": a.get("tx_hash"),
@@ -88,7 +94,23 @@ async def graph_topology(
             "asset_decimals": a.get("asset_decimals"),
             "block_time": a.get("block_time"),
             "block_number": a.get("block_number"),
-        })
+        }
+    # Pinned (path) edges first so max_edges can never cut the attribution path.
+    for src, dst, _key, a in g.edges(keys=True, data=True):
+        if src not in kept_set or dst not in kept_set:
+            continue
+        if src not in pins or dst not in pins:
+            continue
+        edges.append(_edge_row(src, dst, a))
+        if len(edges) >= max_edges:
+            break
+    for src, dst, _key, a in g.edges(keys=True, data=True):
+        if src not in kept_set or dst not in kept_set:
+            continue
+        if src in pins and dst in pins:
+            continue  # already emitted above
+
+        edges.append(_edge_row(src, dst, a))
         if len(edges) >= max_edges:
             break
 
