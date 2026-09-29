@@ -93,6 +93,17 @@ async def graph_topology(
                     break
     except Exception:
         mixer_pools = {}
+    # M42: one batched tag lookup for all kept nodes — was one
+    # address_tags round trip per node per chain (up to ~500).
+    addr_aids: dict[str, list[str]] = {}
+    tags_map: dict[str, list[dict[str, Any]]] = {}
+    if store is not None:
+        all_aids: list[str] = []
+        for _addr in kept:
+            _chains = sorted(g.nodes[_addr].get("chains") or []) or ["unknown"]
+            addr_aids[_addr] = [f"{_ch}:{_addr}" for _ch in _chains]
+            all_aids.extend(addr_aids[_addr])
+        tags_map = await store.tags_for_addresses(all_aids)
     for addr in kept:
         nd = g.nodes[addr]
         first = nd.get("first_seen")
@@ -106,10 +117,8 @@ async def graph_topology(
         if addr in mixer_pools:
             node["pool"] = mixer_pools[addr]
         if store is not None:
-            tags: list[str] = []
-            for chain in node["chains"] or ["unknown"]:
-                tags.extend(
-                    t["tag"] for t in await store.address_tags(addr, chain))
+            tags = [t["tag"] for _aid in addr_aids[addr]
+                    for t in tags_map.get(_aid, [])]
             node["tags"] = sorted(set(tags))
         nodes.append(node)
 

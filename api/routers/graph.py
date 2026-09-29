@@ -114,7 +114,8 @@ async def graph_stats(case_id: str, request: Request,
             kind = _display_kind(h.get("kind")) or "unknown"
             breakdown[kind] = breakdown.get(kind, 0) + 1
     out["classifier_breakdown"] = breakdown
-    out["daily_activity"] = await _daily_activity(store, case_id, days=days)
+    out["daily_activity"] = await _daily_activity(
+        store, case_id, days=days, graph=graph)
     out["activity_days"] = days
     return out
 
@@ -160,13 +161,16 @@ async def graph_transactions(case_id: str, request: Request,
 
 
 async def _daily_activity(store, case_id: str,
-                          days: int = 30) -> list[dict]:
+                          days: int = 30, graph=None) -> list[dict]:
     """Per-day transaction/transfer counts for the last `days` days,
     from the persisted graph's edge block_times (M26).
-    M37: days=0 means lifetime — no start cutoff."""
+    M37: days=0 means lifetime — no start cutoff.
+    M42: accepts a preloaded graph so the stats endpoint doesn't pay
+    for a second snapshot load (the TTL cache covers it anyway)."""
     from datetime import datetime, timedelta, timezone
 
-    graph = await store.load_case_subgraph(case_id)
+    if graph is None:
+        graph = await store.load_case_subgraph(case_id)
     if graph is None:
         return []
     now = datetime.now(timezone.utc)

@@ -132,3 +132,76 @@ async def test_topology_denominates_base_units():
     assert _denominate("1800000000000000000", 18) == "1.8"
     assert _denominate("100", None) == "100"  # unknown decimals: unchanged
     assert _denominate("not-a-number", 8) == "not-a-number"
+
+
+# ---------- M42: workbench query diet ----------
+
+class _TagCountingStore(MemoryGraphStore):
+    def __init__(self):
+        super().__init__()
+        self.batch_calls = 0
+        self.single_calls = 0
+
+    async def tags_for_addresses(self, aids):
+        self.batch_calls += 1
+        return await super().tags_for_addresses(aids)
+
+    async def address_tags(self, address, chain):
+        self.single_calls += 1
+        return await super().address_tags(address, chain)
+
+
+async def test_topology_tags_use_single_batched_call():
+    store = _TagCountingStore()
+    g = _graph()
+    await store.save_case_subgraph("case-1", g)
+    await store.tag_address("0xterm", "ethereum", "vasp:coindcx",
+                            source="unit-test")
+    await store.tag_address("0xmid", "ethereum", "mixer-deposit",
+                            source="unit-test")
+    loaded = await store.load_case_subgraph("case-1")
+    topo = await graph_topology(loaded, store)
+    assert store.batch_calls == 1
+    assert store.single_calls == 0
+    by_id = {n["id"]: n for n in topo["nodes"]}
+    assert by_id["0xterm"]["tags"] == ["vasp:coindcx"]
+    assert by_id["0xmid"]["tags"] == ["mixer-deposit"]
+    assert by_id["0xsub"]["tags"] == []
+
+
+class _LoadCountingStore(MemoryGraphStore):
+    def __init__(self):
+        super().__init__()
+        self.loads = 0
+
+    async def load_case_subgraph(self, case_id):
+        self.loads += 1
+        return await super().load_case_subgraph(case_id)
+
+
+async def test_stats_endpoint_loads_snapshot_once():
+    store = _LoadCountingStore()
+    await store.save_case_subgraph("case-1", _graph(),
+                                   {"subject": "0xsub", "terminal": "0xterm"})
+    client = TestClient(_api_app(store))
+    r = client.get("/cases/case-1/graph/stats")
+    assert r.status_code == 200
+    assert r.json()["daily_activity"] != []
+    assert store.loads == 1  # was 2 before M42 (breakdown + activity)
+
+
+def test_snapshot_ttl_cache_hit_expiry_invalidate(monkeypatch):
+    from engine.graph.neo4j_store import _SnapshotTtlCache
+
+    now = [1000.0]
+    monkeypatch.setattr(
+        "engine.graph.neo4j_store.time.monotonic", lambda: now[0])
+    cache = _SnapshotTtlCache(ttl_seconds=60.0)
+    assert cache.get("c1") is None
+    cache.set("c1", "graph-obj")
+    assert cache.get("c1") == "graph-obj"
+    now[0] += 61.0
+    assert cache.get("c1") is None  # expired
+    cache.set("c1", "g2")
+    cache.invalidate("c1")
+    assert cache.get("c1") is None

@@ -20,10 +20,43 @@ Schema:
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Optional
 
 from .builder import TxGraph
 from .store import GraphStore, _utcnow_iso, restore_graph, snapshot_graph
+
+
+class _SnapshotTtlCache:
+    """Process-level TTL cache for case snapshots (M42).
+
+    One workbench open fires 5 endpoints that each load the same
+    multi-MB `c.snapshot` property; the cache collapses that to one
+    AuraDB round trip per TTL window. Callers must treat the returned
+    graph as read-only — every API/intel consumer only reads.
+    """
+
+    def __init__(self, ttl_seconds: float = 60.0) -> None:
+        self._ttl = ttl_seconds
+        self._items: dict[str, tuple[float, TxGraph]] = {}
+
+    def get(self, key: str) -> Optional[TxGraph]:
+        hit = self._items.get(key)
+        if hit is None or hit[0] <= time.monotonic():
+            self._items.pop(key, None)
+            return None
+        return hit[1]
+
+    def set(self, key: str, value: TxGraph) -> None:
+        self._items[key] = (time.monotonic() + self._ttl, value)
+        if len(self._items) > 64:  # opportunistic eviction of expired
+            now = time.monotonic()
+            for k in [k for k, (_, exp) in self._items.items()
+                      if exp <= now]:
+                self._items.pop(k, None)
+
+    def invalidate(self, key: str) -> None:
+        self._items.pop(key, None)
 
 
 class Neo4jGraphStore(GraphStore):
@@ -32,6 +65,7 @@ class Neo4jGraphStore(GraphStore):
 
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
         self._database = database or None  # None = server default database
+        self._snap_cache = _SnapshotTtlCache()  # M42: 5 endpoints, 1 snapshot
         self._ensure_constraints()
 
     def _session(self):
@@ -132,6 +166,7 @@ class Neo4jGraphStore(GraphStore):
                     " block_number: e.block_number}]->(d)",
                     edges=edges,
                 )
+        self._snap_cache.invalidate(case_id)  # M42: never serve a stale save
         return stats
 
     async def tag_address(
@@ -158,6 +193,11 @@ class Neo4jGraphStore(GraphStore):
     # ------------------------------------------------------------------ read
 
     async def load_case_subgraph(self, case_id: str) -> Optional[TxGraph]:
+        # M42: serve the multi-MB snapshot from the TTL cache — one
+        # workbench open hits this from 5 endpoints within seconds.
+        cached = self._snap_cache.get(case_id)
+        if cached is not None:
+            return cached
         with self._session() as s:
             rec = s.run(
                 "MATCH (c:Case {id: $cid}) RETURN c.snapshot AS snap",
@@ -165,7 +205,9 @@ class Neo4jGraphStore(GraphStore):
             ).single()
         if rec is None or not rec["snap"]:
             return None
-        return restore_graph(json.loads(rec["snap"]))
+        graph = restore_graph(json.loads(rec["snap"]))
+        self._snap_cache.set(case_id, graph)
+        return graph
 
     async def case_stats(self, case_id: str) -> Optional[dict[str, int]]:
         with self._session() as s:
